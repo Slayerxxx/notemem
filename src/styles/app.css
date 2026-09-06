@@ -1,0 +1,125 @@
+/* ============================================================
+ * app.css
+ * 应用级全局样式：移动端容器、功能配色、通用动画
+ * 仅依赖 variables.css 中已定义的基础变量
+ * ============================================================ */
+
+:root {
+  /* 训练页专用功能色（按设计稿要求） */
+  --ok-color: #34c759;
+  --ok-light: #e8f9ee;
+  --ok-dark: #249a3f;
+  --err-color: #ff3b30;
+  --err-light: #ffecea;
+  --err-dark: #d70015;
+  --page-bg: #f5f6f8;
+  --combo-color: #ff9500;
+}
+
+html,
+body {
+  background-color: var(--page-bg);
+}
+
+/* 移动端优先：内容最大宽度 480px 居中，PC 端两侧留白 */
+.app-container {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+  background-color: var(--page-bg);
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.04);
+  overflow-x: hidden;
+}
+
+/* ============== 通用动画 ============== */
+
+/* 反馈态正确答案闪烁 */
+@keyframes correct-blink {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.04);
+  }
+}
+
+/* 得分飘字 */
+@keyframes score-float {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.8);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(0) scale(1.1);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-22px) scale(1);
+  }
+}
+
+/* 题干 / 卡片入场 */
+@keyframes fade-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 时间紧迫抖动 */
+@keyframes urgent-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  75% {
+    transform: translateX(2px);
+  }
+}
+
+.animate-correct {
+  animation: correct-blink 0.5s ease-in-out 2;
+}
+
+.animate-score-float {
+  animation: score-float 1s ease-out forwards;
+}
+
+.animate-fade-up {
+  animation: fade-slide-up 0.25s ease-out both;
+}
+
+/* 通用触摸反馈：所有按钮轻点缩放 */
+button {
+  transition:
+    transform 0.08s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+  cursor: pointer;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
