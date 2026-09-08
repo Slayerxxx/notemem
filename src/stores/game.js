@@ -317,8 +317,10 @@ export const useGameStore = defineStore('game', () => {
 
   /**
    * 单题超时判定（内部方法）：
-   * 视为答错——selectedIndex 记 -1，0 分，连击清零，加入错题
-   * （userAnswer 为「超时未答」），进入 feedback 态等待用户点「下一题」。
+   * 视为答错——selectedIndex 记 -1，0 分，连击清零，加入错题，
+   * 进入 feedback 态等待用户点「下一题」。
+   * 五度圈题若已半填（视图经 setCircleSlots 同步），userAnswer 记录
+   * 已填音名与「未填」空位；完全未填则记「超时未答」。
    * 幂等：非 answering 态调用直接忽略，防止 timer 重复触发。
    */
   function handleQuestionTimeout() {
@@ -326,10 +328,15 @@ export const useGameStore = defineStore('game', () => {
     stopQuestionTimer()
     questionRemainingMs.value = 0
 
+    const q = currentQuestion.value
     const reactionMs = config.value.timeLimit * 1000
     selectedIndex.value = -1
     combo.value = 0
-    wrongItems.value.push(buildWrongItem('超时未答', reactionMs))
+    let timeoutAnswerText = '超时未答'
+    if (q.type === 'circle' && selectedSlots.value.some((s) => s != null)) {
+      timeoutAnswerText = circleAnswerText(q, selectedSlots.value)
+    }
+    wrongItems.value.push(buildWrongItem(timeoutAnswerText, reactionMs))
 
     answeredCount.value += 1
     reactionTimes.value.push(reactionMs)
@@ -507,6 +514,20 @@ export const useGameStore = defineStore('game', () => {
     phase.value = 'feedback'
   }
 
+  /**
+   * 视图同步五度圈题两空已选索引（作答过程中实时调用）。
+   * 超时判定发生在 store 计时器中、拿不到视图本地状态，
+   * 故由训练页在每次填空/改选时同步，超时即可记录半填答案。
+   * @param {[number|null, number|null]} slots [左空选项索引, 右空选项索引]
+   */
+  function setCircleSlots(slots) {
+    if (currentQuestion.value?.type !== 'circle') return
+    selectedSlots.value = [
+      Array.isArray(slots) && Number.isInteger(slots[0]) ? slots[0] : null,
+      Array.isArray(slots) && Number.isInteger(slots[1]) ? slots[1] : null,
+    ]
+  }
+
   /** 单题超时（对外 action，内部走 handleQuestionTimeout） */
   function timeoutQuestion() {
     handleQuestionTimeout()
@@ -583,6 +604,7 @@ export const useGameStore = defineStore('game', () => {
     // actions
     start,
     answerQuestion,
+    setCircleSlots,
     timeoutQuestion,
     nextQuestion,
     finish,

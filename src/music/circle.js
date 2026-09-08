@@ -78,3 +78,18 @@ export function stepAlongCircle(note, steps) {
   }
   return flatNameAt(pos + PERFECT_FIFTH_UP * steps)
 }
+
+/**
+ * 把任意合法音名归一化为降号拼写（等音取降号写法）。
+ * 如 'F#' / 'F♯' → 'G♭'，'Bb' → 'B♭'，'C' → 'C'。
+ * @param {string} note
+ * @returns {string} 降号拼写音名
+ */
+export function toFlatName(note) {
+  const name = normalizeNoteName(note)
+  const pos = NOTE_TO_POSITION[name]
+  if (pos === undefined) {
+    throw new Error(`Unknown note for circle of fifths: ${note}`)
+  }
+  return flatNameAt(pos)
+}

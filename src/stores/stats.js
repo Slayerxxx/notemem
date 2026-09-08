@@ -64,7 +64,7 @@ export const useStatsStore = defineStore('stats', () => {
   /**
    * 记录一轮训练结果。
    * @param {object} session
-   * @param {'scale'|'chord'} session.type 训练类型
+   * @param {'scale'|'chord'|'circle'} session.type 训练类型
    * @param {number} session.level 难度等级
    * @param {number} session.score 本轮得分
    * @param {number} session.total 本轮答题数

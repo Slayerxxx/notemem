@@ -48,6 +48,7 @@ import {
   getCircleNotesByLevel,
   getFifthNeighbors,
   stepAlongCircle,
+  toFlatName,
   CIRCLE_NOTES_FLAT,
 } from '../music/index.js'
 
@@ -428,7 +429,8 @@ export function generateChordQuestion({
  */
 function resolveNotePool(customNotes, level) {
   if (Array.isArray(customNotes) && customNotes.length > 0) {
-    return customNotes.map(normalizeNoteName)
+    // 统一转降号拼写：五度圈模块所有音名一律用降号显示（如 F# → G♭）
+    return customNotes.map(toFlatName)
   }
   return getCircleNotesByLevel(level)
 }

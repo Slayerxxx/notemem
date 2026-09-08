@@ -36,4 +36,5 @@ export {
   PERFECT_FIFTH_DOWN,
   getFifthNeighbors,
   stepAlongCircle,
+  toFlatName,
 } from './circle.js'

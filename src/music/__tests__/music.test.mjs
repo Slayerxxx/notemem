@@ -38,6 +38,7 @@ import {
   CIRCLE_OF_FIFTHS,
   getFifthNeighbors,
   stepAlongCircle,
+  toFlatName,
 } from '../circle.js'
 
 // 提取音阶的纯音名数组，便于断言
@@ -278,6 +279,17 @@ for (const [key, expected] of Object.entries(EXPECTED_SCALES)) {
   // 未知音名抛错
   assert.throws(() => getFifthNeighbors('H'), /Unknown note/)
   assert.throws(() => stepAlongCircle('X', 1), /Unknown note/)
+
+  // toFlatName：任意拼写归一化为降号
+  assert.equal(toFlatName('C'), 'C')
+  assert.equal(toFlatName('Bb'), 'B♭')
+  assert.equal(toFlatName('F#'), 'G♭', 'F♯ 等音应写作 G♭')
+  assert.equal(toFlatName('C#'), 'D♭', 'C♯ 等音应写作 D♭')
+  assert.equal(toFlatName('Gb'), 'G♭')
+  for (const n of CIRCLE_NOTES_FLAT) {
+    assert.equal(toFlatName(n), n, '降号拼写输入应原样返回')
+  }
+  assert.throws(() => toFlatName('H'), /Unknown note/)
 }
 
 // ============== 16. 五度圈难度配置 ==============

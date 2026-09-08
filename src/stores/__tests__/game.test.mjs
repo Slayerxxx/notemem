@@ -527,7 +527,7 @@ function answerWrong(store, reactionMs = 8000) {
   assert.equal(s.wrongItems.length, 2)
   s.reset()
 
-  // —— 超时 ——
+  // —— 超时（完全未答）——
   const s2 = freshStore()
   s2.start({ type: 'circle', level: 1, trainMode: 'custom', timeLimit: 10, totalQuestions: 5 })
   s2.handleQuestionTimeout()
@@ -538,6 +538,31 @@ function answerWrong(store, reactionMs = 8000) {
   assert.equal(s2.lastResult.reactionMs, 10000, '超时反应时长应记为整题限时')
   assert.equal(s2.phase, 'feedback', '超时后停留反馈态')
   s2.reset()
+
+  // —— 超时（已半填）：视图经 setCircleSlots 同步后，错题应记录已填音名 ——
+  const s2b = freshStore()
+  s2b.start({ type: 'circle', level: 1, trainMode: 'custom', timeLimit: 10, totalQuestions: 5 })
+  const q2b = s2b.currentQuestion
+  s2b.setCircleSlots([q2b.correctIndices[0], null])
+  assert.deepEqual(s2b.selectedSlots, [q2b.correctIndices[0], null])
+  s2b.handleQuestionTimeout()
+  assert.equal(s2b.wrongItems.length, 1)
+  const w2b = s2b.wrongItems[0]
+  assert.notEqual(w2b.userAnswer, '超时未答', '半填超时不应记为「超时未答」')
+  assert.ok(w2b.userAnswer.includes('下行'), '半填超时应记录下行空位答案')
+  assert.ok(w2b.userAnswer.includes('未填'), '未填空位应标注「未填」')
+  assert.ok(
+    w2b.userAnswer.includes(q2b.options[q2b.correctIndices[0]]),
+    '错题记录应含已填音名'
+  )
+  s2b.reset()
+
+  // setCircleSlots 对非五度圈题无作用
+  const s2c = freshStore()
+  s2c.start({ type: 'scale', level: 1, trainMode: 'custom', timeLimit: 10, totalQuestions: 3 })
+  s2c.setCircleSlots([1, 2])
+  assert.deepEqual(s2c.selectedSlots, [null, null])
+  s2c.reset()
 
   // —— L1 中心音均为白键音 ——
   const s3 = freshStore()

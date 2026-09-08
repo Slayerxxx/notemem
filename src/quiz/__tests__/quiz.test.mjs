@@ -104,12 +104,14 @@ function semitoneDistance(fromName, toName) {
 {
   for (let level = 1; level <= 12; level++) {
     const expectedKey = getScaleKeyByLevel(level)
-    const questions = Array.from({ length: 50 }, () => generateScaleQuestion({ level }))
+    // 样本量取 200：保证 7 音级全覆盖断言在随机抽样下稳定
+    // （50 题时漏抽某音级概率约 0.3%/级，12 级整轮约 3.5% 偶发失败）
+    const questions = Array.from({ length: 200 }, () => generateScaleQuestion({ level }))
     assert.ok(questions.every((q) => q.keyName === expectedKey),
       `L${level} 音级题 keyName 应全部为 ${expectedKey}`)
     // 每个调的 7 个音级都应出现过
     const degrees = new Set(questions.map((q) => q.degree))
-    assert.equal(degrees.size, 7, `L${level} 50 题应覆盖全部 7 个音级`)
+    assert.equal(degrees.size, 7, `L${level} 200 题应覆盖全部 7 个音级`)
     // 音名与音级对应关系恒成立（含 F♯ 大调 E♯ 等特殊拼写）
     for (const q of questions) {
       assert.equal(getDegreeOfNote(expectedKey, q.promptNote), q.degree,
@@ -406,6 +408,14 @@ for (const level of [1, 2]) {
   const onlyBb = Array.from({ length: 20 },
     () => generateCircleQuestion({ customNotes: ['Bb'] }))
   assert.ok(onlyBb.every((q) => q.center === 'B♭'), "customNotes=['Bb'] 应归一化为 B♭")
+
+  // 升号输入一律转降号拼写（F# -> G♭），题面不得出现升号
+  const sharpInput = Array.from({ length: 20 },
+    () => generateCircleQuestion({ customNotes: ['F#'] }))
+  assert.ok(sharpInput.every((q) => q.center === 'G♭'),
+    "customNotes=['F#'] 中心音应转降号拼写 G♭")
+  assert.ok(sharpInput.every((q) => !q.id.includes('♯') && !q.explanation.includes('♯')),
+    '升号输入题面不应出现 ♯ 字符')
 
   // 错题加权：boostProbability=1 时只出错过的中心音
   const boosted = Array.from({ length: 30 }, () =>

@@ -60,6 +60,9 @@
           >
             <span class="slot-label">下行五度</span>
             <span class="slot-note">{{ slotNote(0) }}</span>
+            <span v-if="slotCorrectNote(0)" class="slot-correct">
+              ✓ {{ slotCorrectNote(0) }}
+            </span>
           </button>
           <span class="circle-arrow" aria-hidden="true">←</span>
           <div class="circle-center">
@@ -75,6 +78,9 @@
           >
             <span class="slot-label">上行五度</span>
             <span class="slot-note">{{ slotNote(1) }}</span>
+            <span v-if="slotCorrectNote(1)" class="slot-correct">
+              ✓ {{ slotCorrectNote(1) }}
+            </span>
           </button>
         </div>
         <p
@@ -211,13 +217,26 @@ const slotPicks = ref([null, null])
 /** 当前等待填写的空位（0=左空，1=右空） */
 const activeSlot = ref(0)
 
-/** 题目切换时重置两空与焦点 */
+/**
+ * 题目切换时重置两空与焦点。
+ * 注意监听题目对象引用而非 id：错题模式下单一中心音可能连续重复 id，
+ * 但每题都是新对象（选项重新洗牌），监听引用保证本地状态必然重置。
+ */
 watch(
-  () => game.currentQuestion?.id,
+  () => game.currentQuestion,
   () => {
     slotPicks.value = [null, null]
     activeSlot.value = 0
   }
+)
+
+/** 两空选择实时同步给 store（超时判定时可记录半填答案） */
+watch(
+  slotPicks,
+  (picks) => {
+    game.setCircleSlots(picks)
+  },
+  { deep: true }
 )
 
 /** 时间不足 30% 时进入紧迫态（进度条变红 + 抖动） */
@@ -253,11 +272,12 @@ const wrongAnswerText = computed(() => {
   const q = game.currentQuestion
   if (!q || game.lastResult?.isCorrect !== false) return ''
   if (q.type === 'circle') {
-    // 两空分别展示，未填空位标注「未填」
+    // 两空分别展示，未填空位标注「未填」；文案与错题本一致（下行 X · 上行 Y）
     return q.slots
       .map((s, i) => {
         const pick = slotPicks.value[i]
-        return `${s.direction} ${pick != null ? q.options[pick] : '未填'}`
+        const dir = i === 0 ? '下行' : '上行'
+        return `${dir} ${pick != null ? q.options[pick] : '未填'}`
       })
       .join(' · ')
   }
@@ -291,6 +311,15 @@ function slotNote(slot) {
   if (pick != null) return q.options[pick]
   if (game.phase === 'feedback') return q.options[q.correctIndices[slot]]
   return '？'
+}
+
+/** 反馈态错空（已填但选错）追加展示的正确音名；其余情况为空 */
+function slotCorrectNote(slot) {
+  const q = game.currentQuestion
+  if (!q || game.phase !== 'feedback') return ''
+  const pick = slotPicks.value[slot]
+  if (pick == null || pick === q.correctIndices[slot]) return ''
+  return q.options[q.correctIndices[slot]]
 }
 
 /** 空位样式：作答中激活/已填；反馈态对绿错红，未填显示正确答案（绿色闪烁） */
@@ -772,6 +801,15 @@ function goHome() {
 
 .circle-slot.wrong .slot-note {
   color: var(--err-dark);
+}
+
+/* 错空下方追加的正确音名提示 */
+.slot-correct {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ok-dark);
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 /* 五度圈题：6 选项 3 列 × 2 行 */
