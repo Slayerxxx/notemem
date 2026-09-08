@@ -109,7 +109,11 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStatsStore } from '../stores/stats.js'
-import { SCALE_DIFFICULTIES, CHORD_DIFFICULTIES } from '../music/difficulty.js'
+import {
+  SCALE_DIFFICULTIES,
+  CHORD_DIFFICULTIES,
+  CIRCLE_DIFFICULTIES,
+} from '../music/difficulty.js'
 
 const router = useRouter()
 const stats = useStatsStore()
@@ -117,11 +121,19 @@ const stats = useStatsStore()
 const TABS = [
   { value: 'scale', label: '音级训练' },
   { value: 'chord', label: '和弦训练' },
+  { value: 'circle', label: '五度圈训练' },
 ]
+
+/** 各模块难度池 */
+function poolOf(type) {
+  if (type === 'scale') return SCALE_DIFFICULTIES
+  if (type === 'circle') return CIRCLE_DIFFICULTIES
+  return CHORD_DIFFICULTIES
+}
 
 /** 首次进入时默认定位到有数据的难度（无数据则 L1） */
 function defaultLevel(type) {
-  const pool = type === 'scale' ? SCALE_DIFFICULTIES : CHORD_DIFFICULTIES
+  const pool = poolOf(type)
   const withData = pool.find((d) => stats.getRecord(type, d.level))
   return withData?.level ?? 1
 }
@@ -129,9 +141,7 @@ function defaultLevel(type) {
 const currentType = ref('scale')
 const currentLevel = ref(defaultLevel('scale'))
 
-const difficulties = computed(() =>
-  currentType.value === 'scale' ? SCALE_DIFFICULTIES : CHORD_DIFFICULTIES
-)
+const difficulties = computed(() => poolOf(currentType.value))
 
 const record = computed(() => stats.getRecord(currentType.value, currentLevel.value))
 

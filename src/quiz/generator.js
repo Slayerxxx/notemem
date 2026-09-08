@@ -19,10 +19,18 @@
  *     3) interval 同根音音程错误组合：如三音换大二度(+2)、
  *        五音换大六度(+9)、减五度(+6) 等，音名合法且与正确答案不同。
  *   · 4 个选项两两不重复（音符集合不同），干扰项尽量来自不同策略。
+ * - 五度圈题（circle）：
+ *   · 固定等级模式从 getCircleNotesByLevel（L1 白键 7 音 / L2 全 12 音）随机
+ *     选中心音，自定义模式从 customNotes 随机；候选 id 为 `circle:<中心音>`。
+ *   · 两空答案：左空 = 下行五度（逆时针，+5 半音），右空 = 上行五度
+ *     （顺时针，+7 半音），均降号拼写。
+ *   · 选项共 6 个音：2 个正确答案 + 2 个「两步外」音（顺/逆时针各再走一步）
+ *     + 2 个其余随机音；两两不同且不含中心音，顺序随机打乱。
  * - 错题强化：候选题在错题本中出现过时，以 WRONG_BOOST_PROBABILITY（50%）
  *   的概率优先从错题相关候选中抽取，否则正常随机。
  *     · 音级题候选粒度：调内 7 个音级；
- *     · 和弦题候选粒度：根音。
+ *     · 和弦题候选粒度：根音；
+ *     · 五度圈题候选粒度：中心音。
  * - 全部为纯函数、无副作用、无 Vue 依赖；随机仅使用 Math.random。
  */
 
@@ -37,6 +45,10 @@ import {
   CHORD_ROOTS,
   getScaleKeyByLevel,
   getChordRootsByLevel,
+  getCircleNotesByLevel,
+  getFifthNeighbors,
+  stepAlongCircle,
+  CIRCLE_NOTES_FLAT,
 } from '../music/index.js'
 
 // ============== 通用常量与工具 ==============
@@ -93,7 +105,11 @@ function shuffle(arr) {
 
 /**
  * 从错题记录中提取题目 id 集合。
- * 错题元素支持两种形态：字符串 id，或带 id/questionId 字段的对象。
+ * 错题元素支持三种形态：
+ * - 字符串题目 id（如 'scale:C:3'）；
+ * - 简写对象 { id: 题目id }；
+ * - 完整错题记录 { id: 错题记录id('wrong:...'), questionId: 题目id }。
+ * 完整记录中题目 id 在 questionId 字段，故优先取 questionId，回退 id。
  * @param {Array<string|{id?: string, questionId?: string}>} wrongQuestions
  * @returns {string[]}
  */
@@ -103,7 +119,7 @@ function extractWrongIds(wrongQuestions) {
     .map((w) => {
       if (w == null) return null
       if (typeof w === 'string') return w
-      return w.id ?? w.questionId ?? null
+      return w.questionId ?? w.id ?? null
     })
     .filter(Boolean)
 }
@@ -404,15 +420,89 @@ export function generateChordQuestion({
   }
 }
 
+// ============== 五度圈题 ==============
+
+/**
+ * 解析五度圈题中心音池：自定义模式用 customNotes，否则用等级音池。
+ * @returns {string[]}
+ */
+function resolveNotePool(customNotes, level) {
+  if (Array.isArray(customNotes) && customNotes.length > 0) {
+    return customNotes.map(normalizeNoteName)
+  }
+  return getCircleNotesByLevel(level)
+}
+
+/**
+ * 生成一道五度圈题。
+ * @param {object} config
+ * @param {number} [config.level=1] 难度等级 1-2（固定等级模式）
+ * @param {string[]|null} [config.customNotes] 自定义中心音数组（非空时启用）
+ * @param {Array<string|object>} [config.wrongQuestions] 错题记录（错题强化）
+ * @param {string|null} [config.prevQuestionId] 上一题 id（尽量避免连续重复）
+ * @returns {object} 题目对象：
+ *   { id, type:'circle', center, slots:[左/右], options(6 音名),
+ *     correctIndices:[leftIdx, rightIdx], explanation }
+ */
+export function generateCircleQuestion({
+  level = 1,
+  customNotes = null,
+  wrongQuestions = [],
+  prevQuestionId = null,
+  boostProbability = WRONG_BOOST_PROBABILITY,
+} = {}) {
+  // 1. 确定中心音（候选粒度：中心音），错题加权抽取
+  const pool = resolveNotePool(customNotes, level)
+  const candidates = pool.map((n) => ({ id: `circle:${n}`, center: n }))
+  const picked = pickWeighted(
+    candidates,
+    wrongQuestions,
+    (item) => item.id,
+    prevQuestionId,
+    boostProbability
+  )
+  const center = picked.center
+
+  // 2. 正确答案：左空 = 下行五度（逆时针），右空 = 上行五度（顺时针）
+  const { up, down } = getFifthNeighbors(center)
+  // 两步外音（顺/逆时针各再走一步），必入干扰项
+  const up2 = stepAlongCircle(center, 2)
+  const down2 = stepAlongCircle(center, -2)
+
+  // 3. 其余干扰音：从 12 音中排除中心音/答案/两步外音后随机选 2 个
+  const excluded = new Set([center, up, down, up2, down2])
+  const rest = CIRCLE_NOTES_FLAT.filter((n) => !excluded.has(n))
+  const extras = shuffle(rest).slice(0, 2)
+
+  // 4. 6 个选项打乱并记录两个正确答案位置
+  const options = shuffle([down, up, up2, down2, extras[0], extras[1]])
+  const leftIdx = options.indexOf(down)
+  const rightIdx = options.indexOf(up)
+
+  return {
+    id: `circle:${center}`,
+    type: 'circle',
+    center,
+    slots: [
+      { side: 'left', direction: '下行五度', answer: down },
+      { side: 'right', direction: '上行五度', answer: up },
+    ],
+    options,
+    correctIndices: [leftIdx, rightIdx],
+    explanation: `${center} 的上行五度是 ${up}，下行五度是 ${down}`,
+  }
+}
+
 // ============== 统一入口 ==============
 
 /**
  * 统一题目生成入口，按 config.type 分发，便于后续扩展新题型。
- * @param {object} config 必须含 type: 'scale' | 'chord'
+ * @param {object} config 必须含 type: 'scale' | 'chord' | 'circle'
  * @returns {object} 题目对象
  */
 export function generateQuestion(config = {}) {
   if (config.type === 'scale') return generateScaleQuestion(config)
   if (config.type === 'chord') return generateChordQuestion(config)
+  if (config.type === 'circle') return generateCircleQuestion(config)
   throw new Error(`Unknown question type: ${config.type}`)
 }

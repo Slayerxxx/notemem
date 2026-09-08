@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node src/music/__tests__/music.test.mjs && node src/quiz/__tests__/quiz.test.mjs && node src/stores/__tests__/game.test.mjs && node src/stores/__tests__/storage.test.mjs"
   },
   "dependencies": {
     "vue": "^3.4.21",

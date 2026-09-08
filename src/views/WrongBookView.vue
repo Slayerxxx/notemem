@@ -107,6 +107,7 @@ const TABS = [
   { value: 'all', label: '全部', short: '全部' },
   { value: 'scale', label: '音级训练', short: '音级' },
   { value: 'chord', label: '和弦训练', short: '和弦' },
+  { value: 'circle', label: '五度圈训练', short: '五度圈' },
 ]
 
 /** Tab 预选：query.type 合法时使用，否则「全部」 */
@@ -117,7 +118,9 @@ const confirmingClear = ref(false)
 
 const tabLabel = computed(() => {
   if (currentTab.value === 'all') return '全部错题'
-  return currentTab.value === 'scale' ? '音级错题' : '和弦错题'
+  if (currentTab.value === 'scale') return '音级错题'
+  if (currentTab.value === 'circle') return '五度圈错题'
+  return '和弦错题'
 })
 
 /** 当前 Tab 的错题列表 */
@@ -137,7 +140,9 @@ const trainableTabs = computed(() => {
 })
 
 function typeCount(type) {
-  return type === 'scale' ? wrongbook.scaleCount : wrongbook.chordCount
+  if (type === 'scale') return wrongbook.scaleCount
+  if (type === 'circle') return wrongbook.circleCount
+  return wrongbook.chordCount
 }
 
 function switchTab(value) {
@@ -159,7 +164,8 @@ function doClear() {
 
 /** 发起对应模块的错题模式训练（难度取用户默认设置） */
 function startWrongTraining(type) {
-  const levelKey = type === 'scale' ? 'scaleLevel' : 'chordLevel'
+  const levelKey =
+    type === 'scale' ? 'scaleLevel' : type === 'circle' ? 'circleLevel' : 'chordLevel'
   router.push({
     path: '/train',
     query: {

@@ -18,10 +18,14 @@ const DEFAULT_SETTINGS = {
   scaleLevel: 1,
   /** 和弦训练默认难度（L1-L3） */
   chordLevel: 1,
+  /** 五度圈训练默认难度（L1-L2） */
+  circleLevel: 1,
   /** 音级默认训练模式：time | count | wrong | custom */
   scaleTrainMode: 'count',
   /** 和弦默认训练模式 */
   chordTrainMode: 'count',
+  /** 五度圈默认训练模式 */
+  circleTrainMode: 'count',
   /** 音效开关 */
   soundEnabled: true,
   /** 自定义模式预设（用户保存的配置数组） */

@@ -39,11 +39,44 @@
             >{{ game.currentQuestion.promptNote }}</span
             > 是第几级？
           </template>
+          <template v-else-if="isCircle">
+            五度圈中，<span class="note-em">{{ game.currentQuestion.center }}</span>
+            左右相邻的音是？
+          </template>
           <template v-else>
             <span class="note-em">{{ game.currentQuestion.root }}</span>
             大三和弦的组成音是？
           </template>
         </p>
+
+        <!-- 五度圈题：左空（下行五度）← 中心音 → 右空（上行五度） -->
+        <div v-if="isCircle" class="circle-board">
+          <button
+            type="button"
+            class="circle-slot"
+            :class="slotClass(0)"
+            :disabled="game.phase !== 'answering'"
+            @click="activateSlot(0)"
+          >
+            <span class="slot-label">下行五度</span>
+            <span class="slot-note">{{ slotNote(0) }}</span>
+          </button>
+          <span class="circle-arrow" aria-hidden="true">←</span>
+          <div class="circle-center">
+            <span class="note-em">{{ game.currentQuestion.center }}</span>
+          </div>
+          <span class="circle-arrow" aria-hidden="true">→</span>
+          <button
+            type="button"
+            class="circle-slot"
+            :class="slotClass(1)"
+            :disabled="game.phase !== 'answering'"
+            @click="activateSlot(1)"
+          >
+            <span class="slot-label">上行五度</span>
+            <span class="slot-note">{{ slotNote(1) }}</span>
+          </button>
+        </div>
         <p
           v-if="game.phase === 'answering'"
           class="timer-seconds"
@@ -78,6 +111,21 @@
           @click="answer(idx)"
         >
           {{ romanOf(deg) }}
+        </button>
+      </div>
+
+      <!-- 五度圈题：6 个音名选项，3 列 × 2 行 -->
+      <div v-else-if="isCircle" class="circle-grid">
+        <button
+          v-for="(note, idx) in game.currentQuestion.options"
+          :key="note"
+          type="button"
+          class="option-btn circle-btn"
+          :class="circleOptionClass(idx)"
+          :disabled="circleOptionDisabled(idx)"
+          @click="pickOption(idx)"
+        >
+          {{ note }}
         </button>
       </div>
 
@@ -135,7 +183,7 @@
  * - phase 变为 finished 时写入错题本与历史统计，然后 replace 到结算页；
  * - 未结束就离开页面时 reset() 清理计时器，防止后台泄漏。
  */
-import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useGameStore } from '../stores/game.js'
 import { useWrongBookStore } from '../stores/wrongbook.js'
@@ -154,6 +202,23 @@ const settings = useSettingsStore()
 // ============== 计算属性 ==============
 
 const isScale = computed(() => game.currentQuestion?.type === 'scale')
+const isCircle = computed(() => game.currentQuestion?.type === 'circle')
+
+// ============== 五度圈题：两空填选本地状态 ==============
+
+/** 两空已选选项索引：[左空(下行五度), 右空(上行五度)]，null 表示未填 */
+const slotPicks = ref([null, null])
+/** 当前等待填写的空位（0=左空，1=右空） */
+const activeSlot = ref(0)
+
+/** 题目切换时重置两空与焦点 */
+watch(
+  () => game.currentQuestion?.id,
+  () => {
+    slotPicks.value = [null, null]
+    activeSlot.value = 0
+  }
+)
 
 /** 时间不足 30% 时进入紧迫态（进度条变红 + 抖动） */
 const isUrgent = computed(() => {
@@ -187,6 +252,15 @@ const showScoreFloat = computed(
 const wrongAnswerText = computed(() => {
   const q = game.currentQuestion
   if (!q || game.lastResult?.isCorrect !== false) return ''
+  if (q.type === 'circle') {
+    // 两空分别展示，未填空位标注「未填」
+    return q.slots
+      .map((s, i) => {
+        const pick = slotPicks.value[i]
+        return `${s.direction} ${pick != null ? q.options[pick] : '未填'}`
+      })
+      .join(' · ')
+  }
   const idx = game.selectedIndex
   if (idx == null || idx < 0 || idx >= q.options.length) return ''
   return optionLabel(idx)
@@ -198,13 +272,95 @@ function romanOf(degree) {
   return degreeToRoman(degree)
 }
 
-/** 选项展示文本：音级题「第 N 级」，和弦题音名组合 */
+/** 选项展示文本：音级题「第 N 级」，五度圈题音名，和弦题音名组合 */
 function optionLabel(idx) {
   const q = game.currentQuestion
   if (!q) return ''
-  return isScale.value
-    ? `第 ${degreeToRoman(q.options[idx])} 级`
-    : (q.options[idx]?.text ?? '')
+  if (isScale.value) return `第 ${degreeToRoman(q.options[idx])} 级`
+  if (isCircle.value) return q.options[idx] ?? ''
+  return q.options[idx]?.text ?? ''
+}
+
+// ============== 五度圈题：两空填选交互 ==============
+
+/** 空位展示音名：作答中显示已选/「？」；反馈态未填则显示正确答案 */
+function slotNote(slot) {
+  const q = game.currentQuestion
+  if (!q) return ''
+  const pick = slotPicks.value[slot]
+  if (pick != null) return q.options[pick]
+  if (game.phase === 'feedback') return q.options[q.correctIndices[slot]]
+  return '？'
+}
+
+/** 空位样式：作答中激活/已填；反馈态对绿错红，未填显示正确答案（绿色闪烁） */
+function slotClass(slot) {
+  const q = game.currentQuestion
+  if (!q) return {}
+  if (game.phase === 'feedback') {
+    const pick = slotPicks.value[slot]
+    if (pick === q.correctIndices[slot]) return { correct: true }
+    if (pick == null) return { correct: true, 'animate-correct': true, miss: true }
+    return { wrong: true }
+  }
+  return {
+    active: activeSlot.value === slot,
+    filled: slotPicks.value[slot] != null,
+  }
+}
+
+/** 点击空位：激活该空；点击已填空位则清空改选（原选项恢复可选） */
+function activateSlot(slot) {
+  if (game.phase !== 'answering') return
+  unlockAudio()
+  if (slotPicks.value[slot] != null) {
+    slotPicks.value[slot] = null
+  }
+  activeSlot.value = slot
+}
+
+/** 点击选项：填入当前空位；另一空为空则焦点跳转，两空填满立即判定 */
+function pickOption(idx) {
+  if (game.phase !== 'answering') return
+  const q = game.currentQuestion
+  if (!q || q.type !== 'circle') return
+  // 已被选用的选项不可重复选择（按钮已禁用，双保险）
+  if (slotPicks.value[0] === idx || slotPicks.value[1] === idx) return
+  unlockAudio()
+  const target = activeSlot.value
+  slotPicks.value[target] = idx
+  const other = target === 0 ? 1 : 0
+  if (slotPicks.value[other] == null) {
+    activeSlot.value = other
+  } else {
+    game.answerQuestion([slotPicks.value[0], slotPicks.value[1]])
+  }
+}
+
+/** 五度圈选项是否禁用：反馈态全禁用；作答中已选用的选项禁用 */
+function circleOptionDisabled(idx) {
+  if (game.phase !== 'answering') return true
+  return slotPicks.value[0] === idx || slotPicks.value[1] === idx
+}
+
+/** 五度圈选项反馈样式：正确答案绿色（未选中闪烁）、错选红色、其余置灰 */
+function circleOptionClass(idx) {
+  const q = game.currentQuestion
+  if (!q || game.phase !== 'feedback') return {}
+  const [leftIdx, rightIdx] = q.correctIndices
+  const [pickedLeft, pickedRight] = slotPicks.value
+  if (idx === leftIdx) {
+    return pickedLeft === leftIdx
+      ? { correct: true }
+      : { correct: true, 'animate-correct': true }
+  }
+  if (idx === rightIdx) {
+    return pickedRight === rightIdx
+      ? { correct: true }
+      : { correct: true, 'animate-correct': true }
+  }
+  if (idx === pickedLeft || idx === pickedRight) return { wrong: true }
+  return { dim: true }
 }
 
 /** 选项反馈样式：正确绿色（答错时闪烁高亮）、错选红色、其余置灰 */
@@ -223,14 +379,14 @@ function optionClass(idx) {
 
 // ============== 流程控制 ==============
 
-const VALID_TYPES = ['scale', 'chord']
+const VALID_TYPES = ['scale', 'chord', 'circle']
 const VALID_MODES = ['time', 'count', 'wrong', 'custom']
 
 /** 解析路由 query 为训练配置；非法或缺错题时返回 null（回首页） */
 function parseQuery() {
   const q = route.query
   if (!VALID_TYPES.includes(q.type)) return null
-  const maxLevel = q.type === 'scale' ? 12 : 3
+  const maxLevel = q.type === 'scale' ? 12 : q.type === 'circle' ? 2 : 3
   const level = Number.parseInt(q.level, 10)
   if (!Number.isInteger(level) || level < 1 || level > maxLevel) return null
 
@@ -244,9 +400,10 @@ function parseQuery() {
     const s = Number.parseInt(q.sessionTime, 10)
     if (Number.isInteger(s) && s > 0) cfg.sessionTime = s
   } else if (trainMode === 'wrong') {
-    // 错题模式依赖错题本，空时直接回首页（首页入口已禁用，防御直达 URL）
-    if (wrongbook.count === 0) return null
-    cfg.wrongQuestions = wrongbook.getWrongQuestions(q.type)
+    // 错题模式依赖错题本：该模块无错题时直接回首页（首页入口已禁用，防御直达 URL）
+    const wrongList = wrongbook.getWrongQuestions(q.type)
+    if (wrongList.length === 0) return null
+    cfg.wrongQuestions = wrongList
   }
   return cfg
 }
@@ -516,6 +673,126 @@ function goHome() {
   font-weight: 700;
   color: var(--text-color);
   font-variant-numeric: tabular-nums;
+}
+
+/* 五度圈题：空位板（左空 ← 中心 → 右空） */
+.circle-board {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.circle-slot {
+  flex-shrink: 0;
+  width: 76px;
+  min-height: 72px;
+  padding: 8px 6px;
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--card-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.circle-slot .slot-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.circle-slot .slot-note {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text-tertiary);
+  line-height: 1.1;
+}
+
+/* 作答中：当前激活空位高亮 */
+.circle-slot.active {
+  border-style: solid;
+  border-color: var(--primary-color);
+  background: var(--primary-light);
+}
+
+.circle-slot.active .slot-label,
+.circle-slot.active .slot-note {
+  color: var(--primary-dark);
+}
+
+/* 作答中：已填入音名的空位 */
+.circle-slot.filled {
+  border-style: solid;
+  border-color: var(--primary-color);
+}
+
+.circle-slot.filled .slot-note {
+  color: var(--primary-color);
+}
+
+.circle-arrow {
+  flex-shrink: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-tertiary);
+}
+
+.circle-center {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.circle-center .note-em {
+  font-size: 44px;
+}
+
+/* 反馈态空位配色 */
+.circle-slot.correct {
+  border-style: solid;
+  border-color: var(--ok-color);
+  background: var(--ok-light);
+}
+
+.circle-slot.correct .slot-note {
+  color: var(--ok-dark);
+}
+
+.circle-slot.wrong {
+  border-style: solid;
+  border-color: var(--err-color);
+  background: var(--err-light);
+}
+
+.circle-slot.wrong .slot-note {
+  color: var(--err-dark);
+}
+
+/* 五度圈题：6 选项 3 列 × 2 行 */
+.circle-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.circle-btn {
+  min-height: 60px;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--card-bg);
+  color: var(--text-color);
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.circle-btn:disabled:not(.correct):not(.wrong):not(.dim) {
+  opacity: 0.45;
 }
 
 /* 选项反馈态 */

@@ -26,10 +26,19 @@ import {
 import {
   SCALE_DIFFICULTIES,
   CHORD_DIFFICULTIES,
+  CIRCLE_DIFFICULTIES,
   DEFAULT_TIME_LIMIT,
   getScaleKeyByLevel,
   getChordRootsByLevel,
+  getCircleNotesByLevel,
 } from '../difficulty.js'
+
+import {
+  CIRCLE_NOTES_FLAT,
+  CIRCLE_OF_FIFTHS,
+  getFifthNeighbors,
+  stepAlongCircle,
+} from '../circle.js'
 
 // 提取音阶的纯音名数组，便于断言
 function names(scale) {
@@ -230,6 +239,71 @@ for (const [key, expected] of Object.entries(EXPECTED_SCALES)) {
   assert.equal(normalizeNoteName('bb'), 'B♭')
   assert.equal(normalizeNoteName('B♭'), 'B♭')
   assert.equal(normalizeNoteName('Eb'), 'E♭')
+}
+
+// ============== 15. 五度圈邻居计算（降号拼写） ==============
+{
+  // 顺时针（上行五度）序列：C G D A E B G♭ D♭ A♭ E♭ B♭ F
+  const clockwise = ['C', 'G', 'D', 'A', 'E', 'B', 'G♭', 'D♭', 'A♭', 'E♭', 'B♭', 'F']
+  assert.deepEqual(CIRCLE_OF_FIFTHS, clockwise, '五度圈顺时针序列应为 C G D A E B G♭ D♭ A♭ E♭ B♭ F')
+  assert.equal(CIRCLE_NOTES_FLAT.length, 12, '降号拼写表应有 12 个音')
+
+  for (let i = 0; i < 12; i++) {
+    const note = clockwise[i]
+    const expectedUp = clockwise[(i + 1) % 12]
+    const expectedDown = clockwise[(i - 1 + 12) % 12]
+    const { up, down } = getFifthNeighbors(note)
+    assert.equal(up, expectedUp, `${note} 的上行五度应为 ${expectedUp}，实际 ${up}`)
+    assert.equal(down, expectedDown, `${note} 的下行五度应为 ${expectedDown}，实际 ${down}`)
+    // 所有返回值必须为降号拼写：不得包含升号 ♯
+    assert.ok(!up.includes('♯'), `${note} 上行五度 ${up} 不应含升号`)
+    assert.ok(!down.includes('♯'), `${note} 下行五度 ${down} 不应含升号`)
+    // 邻居与中心音两两不同
+    assert.notEqual(up, note)
+    assert.notEqual(down, note)
+    assert.notEqual(up, down)
+  }
+
+  // 关键拼写断言：B 的上行五度是 G♭（不是 F♯）；F 的下行五度是 B♭
+  assert.equal(getFifthNeighbors('B').up, 'G♭', 'B 的上行五度应为 G♭（降号拼写）')
+  assert.equal(getFifthNeighbors('F').down, 'B♭', 'F 的下行五度应为 B♭')
+  // 升号输入也应归一化并返回降号拼写
+  assert.equal(getFifthNeighbors('F#').up, 'D♭', 'F♯(=G♭) 的上行五度应为 D♭')
+  // stepAlongCircle：+1 等价 up，-1 等价 down
+  for (const note of CIRCLE_OF_FIFTHS) {
+    assert.equal(stepAlongCircle(note, 1), getFifthNeighbors(note).up)
+    assert.equal(stepAlongCircle(note, -1), getFifthNeighbors(note).down)
+    assert.equal(stepAlongCircle(note, 12), note, '沿圈走 12 步应回到自身')
+  }
+  // 未知音名抛错
+  assert.throws(() => getFifthNeighbors('H'), /Unknown note/)
+  assert.throws(() => stepAlongCircle('X', 1), /Unknown note/)
+}
+
+// ============== 16. 五度圈难度配置 ==============
+{
+  assert.equal(CIRCLE_DIFFICULTIES.length, 2, 'CIRCLE_DIFFICULTIES 应有 2 项')
+
+  const l1 = getCircleNotesByLevel(1)
+  assert.deepEqual([...l1].sort(), ['A', 'B', 'C', 'D', 'E', 'F', 'G'].sort(),
+    'L1 应为 7 个白键音 C D E F G A B')
+  assert.equal(l1.length, 7, 'L1 应有 7 个中心音')
+  for (const n of l1) {
+    assert.ok(!n.includes('♯') && !n.includes('♭'), `L1 中心音 ${n} 不应含升降号`)
+  }
+
+  const l2 = getCircleNotesByLevel(2)
+  assert.equal(l2.length, 12, 'L2 应覆盖全部 12 个音')
+  assert.deepEqual([...l2].sort(), [...CIRCLE_NOTES_FLAT].sort(),
+    'L2 应与 12 音降号拼写表一致')
+  for (const black of ['D♭', 'E♭', 'G♭', 'A♭', 'B♭']) {
+    assert.ok(l2.includes(black), `L2 应包含黑键音 ${black}`)
+    assert.ok(!l1.includes(black), `L1 不应包含黑键音 ${black}`)
+  }
+
+  // 非法等级抛错
+  assert.throws(() => getCircleNotesByLevel(0), /Invalid circle difficulty level/)
+  assert.throws(() => getCircleNotesByLevel(3), /Invalid circle difficulty level/)
 }
 
 console.log('All tests passed!')

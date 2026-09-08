@@ -84,7 +84,11 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGameStore } from '../stores/game.js'
 import { useWrongBookStore } from '../stores/wrongbook.js'
-import { SCALE_DIFFICULTIES, CHORD_DIFFICULTIES } from '../music/difficulty.js'
+import {
+  SCALE_DIFFICULTIES,
+  CHORD_DIFFICULTIES,
+  CIRCLE_DIFFICULTIES,
+} from '../music/difficulty.js'
 
 const router = useRouter()
 const game = useGameStore()
@@ -130,9 +134,19 @@ const fastestText = computed(() =>
 const scopeText = computed(() => {
   const c = cfg.value
   if (!c) return ''
-  const diffPool = c.type === 'scale' ? SCALE_DIFFICULTIES : CHORD_DIFFICULTIES
+  const diffPool =
+    c.type === 'scale'
+      ? SCALE_DIFFICULTIES
+      : c.type === 'circle'
+        ? CIRCLE_DIFFICULTIES
+        : CHORD_DIFFICULTIES
   const diff = diffPool.find((d) => d.level === c.level)
-  const typeText = c.type === 'scale' ? `${diff?.key ?? ''} 大调音级` : '和弦组成音'
+  const typeText =
+    c.type === 'scale'
+      ? `${diff?.key ?? ''} 大调音级`
+      : c.type === 'circle'
+        ? '五度圈相邻音'
+        : '和弦组成音'
   const modeText =
     c.trainMode === 'time'
       ? `限时 ${c.sessionTime / 60} 分钟`
@@ -161,15 +175,17 @@ function replay() {
   if (c.trainMode === 'custom') {
     next.customKeys = c.customKeys
     next.customRoots = c.customRoots
+    next.customNotes = c.customNotes
     next.totalQuestions = c.totalQuestions
   }
   if (c.trainMode === 'wrong') {
-    if (wrongbook.count === 0) {
-      // 错题已清空，回首页
+    // 错题模式按当前模块重新取数；该模块错题已清空则回首页
+    const wrongList = wrongbook.getWrongQuestions(c.type)
+    if (wrongList.length === 0) {
       router.replace('/')
       return
     }
-    next.wrongQuestions = wrongbook.getWrongQuestions(c.type)
+    next.wrongQuestions = wrongList
   }
   game.start(next)
   router.replace('/train')

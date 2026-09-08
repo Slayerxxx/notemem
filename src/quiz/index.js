@@ -10,6 +10,7 @@ export {
   // 题目生成
   generateScaleQuestion,
   generateChordQuestion,
+  generateCircleQuestion,
   generateQuestion,
   // 错题加权
   pickWeighted,

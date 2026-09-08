@@ -514,4 +514,74 @@ function withStorage(storageLike, fn) {
   assert.equal(stats2.getRecord('chord', 3).bestScore, 50)
 }
 
+// ============== 五度圈（circle）错题 / 设置 / 统计 ==============
+{
+  freshPinia()
+  const wb = useWrongBookStore()
+  const stats = useStatsStore()
+  const settings = useSettingsStore()
+
+  // settings 默认值含 circle 字段
+  assert.equal(settings.settings.circleLevel, 1, 'circleLevel 默认应为 1')
+  assert.equal(settings.settings.circleTrainMode, 'count', 'circleTrainMode 默认应为 count')
+
+  // 写入 3 模块混合错题
+  const circleWrong = (center) => makeWrong('circle', `circle:${center}`, {
+    root: undefined,
+    center,
+    promptText: `五度圈中，${center} 左右相邻的音是？`,
+    correctAnswer: '下行 F · 上行 G',
+    userAnswer: '下行 F · 上行 A',
+  })
+  wb.addItems([
+    makeWrong('scale', 'scale:C:1'),
+    makeWrong('chord', 'chord:C'),
+    circleWrong('B♭'),
+    circleWrong('E♭'),
+  ])
+  assert.equal(wb.count, 4)
+  assert.equal(wb.circleCount, 2, 'circleCount 应统计五度圈错题')
+  assert.equal(wb.scaleCount, 1)
+  assert.equal(wb.chordCount, 1)
+  assert.equal(wb.getByType('circle').length, 2)
+  const circleQs = wb.getWrongQuestions('circle')
+  assert.ok(circleQs.every((q) => q.questionId.startsWith('circle:') && q.center),
+    'getWrongQuestions 返回的记录应含 questionId 与 center')
+
+  // clearAll('circle') 只清五度圈，其余模块保留
+  wb.clearAll('circle')
+  assert.equal(wb.circleCount, 0)
+  assert.equal(wb.scaleCount, 1, '音级错题应保留')
+  assert.equal(wb.chordCount, 1, '和弦错题应保留')
+
+  // stats 支持 circle 维度（键为 circle_<level>）
+  stats.recordSession({
+    type: 'circle', level: 1, score: 110, total: 10, correct: 9,
+    reactionTimes: reactionTimes(10, 3000, 100),
+  })
+  const cr = stats.getRecord('circle', 1)
+  assert.equal(cr.bestScore, 110)
+  assert.equal(cr.sessions, 1)
+  assert.equal(stats.getRecord('circle', 2), null)
+  assert.ok(Math.abs(stats.accuracyOf('circle', 1) - 0.9) < 1e-9)
+
+  // circle 设置更新 / 重置
+  settings.update({ circleLevel: 2, circleTrainMode: 'time' })
+  assert.equal(settings.settings.circleLevel, 2)
+  assert.equal(settings.settings.circleTrainMode, 'time')
+  settings.reset()
+  assert.equal(settings.settings.circleLevel, 1)
+  assert.equal(settings.settings.circleTrainMode, 'count')
+
+  // 刷新后 circle 错题清空结果与统计持久化
+  simulateRefresh()
+  const wb2 = useWrongBookStore()
+  const stats2 = useStatsStore()
+  const settings2 = useSettingsStore()
+  assert.equal(wb2.circleCount, 0)
+  assert.equal(wb2.scaleCount, 1)
+  assert.equal(stats2.getRecord('circle', 1).bestScore, 110, 'circle 统计应持久化')
+  assert.equal(settings2.settings.circleLevel, 1)
+}
+
 console.log('All storage layer tests passed!')

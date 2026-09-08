@@ -41,6 +41,21 @@
           <span class="chip-sub">{{ d.label.split('·')[1]?.trim() }}</span>
         </button>
       </div>
+
+      <p class="group-label">五度圈训练</p>
+      <div class="chip-scroll">
+        <button
+          v-for="d in CIRCLE_DIFFICULTIES"
+          :key="d.level"
+          type="button"
+          class="chip"
+          :class="{ active: settings.settings.circleLevel === d.level }"
+          @click="update({ circleLevel: d.level })"
+        >
+          <span class="chip-main">L{{ d.level }}</span>
+          <span class="chip-sub">{{ d.label.split('·')[1]?.trim() }}</span>
+        </button>
+      </div>
     </section>
 
     <!-- 默认训练模式 -->
@@ -70,6 +85,20 @@
           class="mode-btn"
           :class="{ active: settings.settings.chordTrainMode === m.value }"
           @click="update({ chordTrainMode: m.value })"
+        >
+          {{ m.label }}
+        </button>
+      </div>
+
+      <p class="group-label">五度圈训练</p>
+      <div class="mode-row">
+        <button
+          v-for="m in MODE_OPTIONS"
+          :key="m.value"
+          type="button"
+          class="mode-btn"
+          :class="{ active: settings.settings.circleTrainMode === m.value }"
+          @click="update({ circleTrainMode: m.value })"
         >
           {{ m.label }}
         </button>
@@ -182,7 +211,11 @@ import { useRouter } from 'vue-router'
 import { useSettingsStore } from '../stores/settings.js'
 import { useWrongBookStore } from '../stores/wrongbook.js'
 import { useStatsStore } from '../stores/stats.js'
-import { SCALE_DIFFICULTIES, CHORD_DIFFICULTIES } from '../music/difficulty.js'
+import {
+  SCALE_DIFFICULTIES,
+  CHORD_DIFFICULTIES,
+  CIRCLE_DIFFICULTIES,
+} from '../music/difficulty.js'
 
 const router = useRouter()
 const settings = useSettingsStore()

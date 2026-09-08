@@ -1,12 +1,14 @@
 /**
  * difficulty.js
- * 音级训练与和弦训练的难度等级配置
+ * 音级训练、和弦训练与五度圈训练的难度等级配置
  *
  * 音级训练 L1-L12：每个等级对应一个大调，按升降号数量升序（常用度排序）。
  * 和弦训练 L1-L3：逐级扩大根音池。
+ * 五度圈训练 L1-L2：L1 中心音为 7 个白键音（无升降号），L2 为全部 12 音。
  */
 
 import { CHORD_ROOTS } from './chords.js'
+import { CIRCLE_NOTES_FLAT } from './circle.js'
 
 /**
  * 音级训练难度（L1-L12）。
@@ -36,6 +38,16 @@ export const CHORD_DIFFICULTIES = [
   { level: 3, roots: CHORD_ROOTS, label: 'L3 · 大师' },
 ]
 
+/**
+ * 五度圈训练难度（L1-L2）。
+ * L1 中心音为 7 个白键音（无升降号）；L2 为全部 12 个音（降号拼写）。
+ * 注意：白键中心音的答案仍可能是降号音（如 F 的下行五度为 B♭）。
+ */
+export const CIRCLE_DIFFICULTIES = [
+  { level: 1, notes: ['C', 'D', 'E', 'F', 'G', 'A', 'B'], label: 'L1 · 白键音' },
+  { level: 2, notes: CIRCLE_NOTES_FLAT.slice(), label: 'L2 · 全部 12 音' },
+]
+
 // 单题默认限时（秒），音级训练与和弦训练统一
 export const DEFAULT_TIME_LIMIT = 15
 
@@ -63,4 +75,17 @@ export function getChordRootsByLevel(level) {
     throw new Error(`Invalid chord difficulty level: ${level}`)
   }
   return item.roots
+}
+
+/**
+ * 根据等级获取五度圈训练的中心音池。
+ * @param {number} level 1-2
+ * @returns {string[]} 中心音数组（降号拼写）
+ */
+export function getCircleNotesByLevel(level) {
+  const item = CIRCLE_DIFFICULTIES.find((d) => d.level === level)
+  if (!item) {
+    throw new Error(`Invalid circle difficulty level: ${level}`)
+  }
+  return item.notes
 }

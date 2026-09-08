@@ -15,6 +15,7 @@ import {
   ROMAN_NUMERALS,
   generateScaleQuestion,
   generateChordQuestion,
+  generateCircleQuestion,
   generateQuestion,
   pickWeighted,
   CHORD_DISTRACTOR_STRATEGIES,
@@ -26,10 +27,13 @@ import {
 import {
   getScaleKeyByLevel,
   getChordRootsByLevel,
+  getCircleNotesByLevel,
   getDegreeOfNote,
   getNoteByDegree,
   getMajorTriad,
   getMinorTriad,
+  getFifthNeighbors,
+  stepAlongCircle,
   NOTE_TO_POSITION,
 } from '../../music/index.js'
 
@@ -332,7 +336,100 @@ function semitoneDistance(fromName, toName) {
   assert.equal(cq.type, 'chord')
   assert.ok(getChordRootsByLevel(1).includes(cq.root))
 
+  const circleQ = generateQuestion({ type: 'circle', level: 1 })
+  assert.equal(circleQ.type, 'circle')
+
   assert.throws(() => generateQuestion({ type: 'unknown' }), /Unknown question type/)
+}
+
+// ============== 五度圈题：批量结构校验（200 题 × L1/L2） ==============
+for (const level of [1, 2]) {
+  const pool = getCircleNotesByLevel(level)
+  const questions = Array.from({ length: 200 }, () => generateCircleQuestion({ level }))
+
+  for (const q of questions) {
+    // 基本结构
+    assert.equal(q.type, 'circle')
+    assert.equal(q.id, `circle:${q.center}`)
+    assert.ok(pool.includes(q.center), `L${level} 中心音 ${q.center} 应在等级音池内`)
+
+    // options：6 个两两不同的音，不含中心音
+    assert.equal(q.options.length, 6, '五度圈题应有 6 个选项')
+    assert.equal(new Set(q.options).size, 6, '6 个选项应两两不同')
+    assert.ok(!q.options.includes(q.center), '选项不应包含中心音')
+
+    // 全部降号拼写，无升号
+    for (const n of q.options) {
+      assert.ok(!n.includes('♯'), `选项 ${n} 不应含升号`)
+    }
+
+    // slots：左=下行五度，右=上行五度
+    const { up, down } = getFifthNeighbors(q.center)
+    assert.equal(q.slots[0].side, 'left')
+    assert.equal(q.slots[0].direction, '下行五度')
+    assert.equal(q.slots[0].answer, down, '左空答案应为下行五度')
+    assert.equal(q.slots[1].side, 'right')
+    assert.equal(q.slots[1].direction, '上行五度')
+    assert.equal(q.slots[1].answer, up, '右空答案应为上行五度')
+
+    // correctIndices 指向 options 中正确答案
+    const [leftIdx, rightIdx] = q.correctIndices
+    assert.equal(q.options[leftIdx], down, 'correctIndices[0] 应指向下行五度音')
+    assert.equal(q.options[rightIdx], up, 'correctIndices[1] 应指向上行五度音')
+    assert.notEqual(leftIdx, rightIdx, '两个正确答案位置不应相同')
+
+    // 干扰项必含两个两步外音
+    const up2 = stepAlongCircle(q.center, 2)
+    const down2 = stepAlongCircle(q.center, -2)
+    assert.ok(q.options.includes(up2), `选项应包含上行两步外音 ${up2}（中心 ${q.center}）`)
+    assert.ok(q.options.includes(down2), `选项应包含下行两步外音 ${down2}（中心 ${q.center}）`)
+
+    // explanation 含两个正确音名
+    assert.ok(q.explanation.includes(up) && q.explanation.includes(down),
+      'explanation 应包含上下五度两个音名')
+  }
+
+  // 中心音应覆盖音池（200 题随机性足够覆盖）
+  const centers = new Set(questions.map((q) => q.center))
+  for (const n of pool) {
+    assert.ok(centers.has(n), `L${level} 200 题中应覆盖中心音 ${n}`)
+  }
+}
+
+// ============== 五度圈题：customNotes / 错题加权 / 避免重复 ==============
+{
+  // customNotes 限定中心音
+  const onlyC = Array.from({ length: 30 }, () => generateCircleQuestion({ customNotes: ['C'] }))
+  assert.ok(onlyC.every((q) => q.center === 'C'), 'customNotes=[C] 时中心音应恒为 C')
+
+  // ASCII 降号输入归一化（Bb -> B♭）
+  const onlyBb = Array.from({ length: 20 },
+    () => generateCircleQuestion({ customNotes: ['Bb'] }))
+  assert.ok(onlyBb.every((q) => q.center === 'B♭'), "customNotes=['Bb'] 应归一化为 B♭")
+
+  // 错题加权：boostProbability=1 时只出错过的中心音
+  const boosted = Array.from({ length: 30 }, () =>
+    generateCircleQuestion({ level: 2, wrongQuestions: ['circle:B♭'], boostProbability: 1 }))
+  assert.ok(boosted.every((q) => q.center === 'B♭'),
+    'boostProbability=1 且错题含 circle:B♭ 时中心音应恒为 B♭')
+
+  // 错题对象形态（含 center 字段）也应识别
+  const boostedObj = Array.from({ length: 20 }, () =>
+    generateCircleQuestion({
+      level: 2,
+      wrongQuestions: [{ id: 'wrong:circle:A♭:1', questionId: 'circle:A♭', center: 'A♭' }],
+      boostProbability: 1,
+    }))
+  assert.ok(boostedObj.every((q) => q.center === 'A♭'),
+    '错题对象形态（questionId circle:A♭）应被加权识别')
+
+  // prevQuestionId：不与上一题连续重复
+  let prevId = null
+  for (let i = 0; i < 200; i++) {
+    const q = generateCircleQuestion({ level: 2, prevQuestionId: prevId })
+    assert.notEqual(q.id, prevId, '五度圈题不应与上一题 id 完全相同')
+    prevId = q.id
+  }
 }
 
 console.log('All quiz tests passed!')

@@ -22,7 +22,18 @@ export {
 export {
   SCALE_DIFFICULTIES,
   CHORD_DIFFICULTIES,
+  CIRCLE_DIFFICULTIES,
   DEFAULT_TIME_LIMIT,
   getScaleKeyByLevel,
   getChordRootsByLevel,
+  getCircleNotesByLevel,
 } from './difficulty.js'
+
+export {
+  CIRCLE_NOTES_FLAT,
+  CIRCLE_OF_FIFTHS,
+  PERFECT_FIFTH_UP,
+  PERFECT_FIFTH_DOWN,
+  getFifthNeighbors,
+  stepAlongCircle,
+} from './circle.js'

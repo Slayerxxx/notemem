@@ -461,4 +461,139 @@ function answerWrong(store, reactionMs = 8000) {
   store.reset()
 }
 
+// ============== 五度圈题（circle）作答判定与错题记录 ==============
+{
+  /** 在 0-5 中找一个不在 forbidden 列表内的选项索引（模拟合法错选） */
+  function wrongIdx(q, ...forbidden) {
+    for (let i = 0; i < q.options.length; i++) {
+      if (!forbidden.includes(i)) return i
+    }
+    throw new Error('no wrong index available')
+  }
+
+  const s = freshStore()
+  s.start({ type: 'circle', level: 1, trainMode: 'count', totalQuestions: 20, timeLimit: 10 })
+
+  // —— 全对 ——
+  let q = s.currentQuestion
+  assert.equal(q.type, 'circle')
+  assert.equal(q.options.length, 6)
+  const [ci0, ci1] = q.correctIndices
+  s.answerQuestion([ci0, ci1], 8000)
+  assert.equal(s.phase, 'feedback')
+  assert.equal(s.lastResult.isCorrect, true, '两空全答应判正确')
+  assert.equal(s.combo, 1)
+  assert.equal(s.correctCount, 1)
+  assert.ok(s.lastResult.gainedScore > 0)
+  assert.deepEqual(s.selectedSlots, [ci0, ci1])
+
+  // feedback 态防抖：再次作答无效
+  const scoreBefore = s.score
+  s.answerQuestion([0, 1], 1000)
+  assert.equal(s.score, scoreBefore, 'feedback 态作答应被忽略')
+  assert.equal(s.answeredCount, 1)
+
+  // 下一题：selectedSlots 重置
+  s.nextQuestion()
+  assert.equal(s.phase, 'answering')
+  assert.deepEqual(s.selectedSlots, [null, null])
+
+  // —— 半错（左对右错）——
+  q = s.currentQuestion
+  const wrongRight = wrongIdx(q, q.correctIndices[1], q.correctIndices[0])
+  s.answerQuestion([q.correctIndices[0], wrongRight], 8000)
+  assert.equal(s.lastResult.isCorrect, false, '一空错误应判整题错误')
+  assert.equal(s.combo, 0, '答错连击应清零')
+  assert.equal(s.wrongItems.length, 1)
+  const w = s.wrongItems[0]
+  assert.equal(w.type, 'circle')
+  assert.equal(w.center, q.center)
+  assert.equal(w.questionId, `circle:${q.center}`)
+  assert.ok(w.promptText.includes(q.center), '错题题干应含中心音')
+  assert.ok(w.correctAnswer.includes('下行') && w.correctAnswer.includes('上行'),
+    '正确答案应为「下行 X · 上行 Y」形式')
+  assert.ok(w.correctAnswer.includes(q.slots[0].answer), '正确答案应含下行五度音')
+  assert.ok(w.correctAnswer.includes(q.slots[1].answer), '正确答案应含上行五度音')
+  assert.ok(w.userAnswer.includes('下行') && w.userAnswer.includes('上行'),
+    '用户答案也应标注下行/上行')
+
+  // —— 全错 ——
+  s.nextQuestion()
+  q = s.currentQuestion
+  const wl = wrongIdx(q, q.correctIndices[0], q.correctIndices[1])
+  const wr = wrongIdx(q, q.correctIndices[0], q.correctIndices[1], wl)
+  s.answerQuestion([wl, wr], 8000)
+  assert.equal(s.lastResult.isCorrect, false, '两空皆错应判错误')
+  assert.equal(s.wrongItems.length, 2)
+  s.reset()
+
+  // —— 超时 ——
+  const s2 = freshStore()
+  s2.start({ type: 'circle', level: 1, trainMode: 'custom', timeLimit: 10, totalQuestions: 5 })
+  s2.handleQuestionTimeout()
+  assert.equal(s2.selectedIndex, -1, '超时 selectedIndex 应为 -1')
+  assert.equal(s2.lastResult.isCorrect, false)
+  assert.equal(s2.wrongItems.length, 1)
+  assert.equal(s2.wrongItems[0].userAnswer, '超时未答')
+  assert.equal(s2.lastResult.reactionMs, 10000, '超时反应时长应记为整题限时')
+  assert.equal(s2.phase, 'feedback', '超时后停留反馈态')
+  s2.reset()
+
+  // —— L1 中心音均为白键音 ——
+  const s3 = freshStore()
+  s3.start({ type: 'circle', level: 1, trainMode: 'custom', totalQuestions: 50 })
+  const whiteKeys = new Set(['C', 'D', 'E', 'F', 'G', 'A', 'B'])
+  for (let i = 0; i < 30; i++) {
+    assert.ok(whiteKeys.has(s3.currentQuestion.center),
+      `L1 中心音 ${s3.currentQuestion.center} 应为白键音`)
+    s3.answerQuestion(s3.currentQuestion.correctIndices, 8000)
+    s3.nextQuestion()
+  }
+  assert.equal(s3.correctCount, 30)
+  s3.reset()
+
+  // —— 非法类型抛错 ——
+  assert.throws(() => freshStore().start({ type: 'circle2' }), /未知训练类型/)
+}
+
+// ============== 五度圈题：错题模式范围限定 ==============
+{
+  const s = freshStore()
+  s.start({
+    type: 'circle',
+    level: 2,
+    trainMode: 'wrong',
+    wrongQuestions: [
+      { id: 'wrong:circle:B♭:1', questionId: 'circle:B♭', type: 'circle', center: 'B♭' },
+    ],
+  })
+  assert.deepEqual(s.config.customNotes, ['B♭'], '应从错题提取中心音范围')
+  assert.equal(s.config.totalQuestions, 1, '错题模式题量应为错题数')
+  assert.equal(s.currentQuestion.center, 'B♭', '错题模式应只出 B♭ 中心音')
+  s.answerQuestion(s.currentQuestion.correctIndices, 8000)
+  s.nextQuestion()
+  assert.equal(s.phase, 'finished', '题量答完应结束')
+  s.reset()
+
+  // 字符串 id 形态的错题记录也能提取范围
+  const s2 = freshStore()
+  s2.start({
+    type: 'circle',
+    level: 2,
+    trainMode: 'wrong',
+    wrongQuestions: ['circle:A♭', 'circle:E♭'],
+  })
+  assert.deepEqual([...s2.config.customNotes].sort(), ['A♭', 'E♭'])
+  assert.equal(s2.config.totalQuestions, 2, '错题模式题量应为错题数')
+  for (let i = 0; i < 2; i++) {
+    assert.ok(['A♭', 'E♭'].includes(s2.currentQuestion.center),
+      '错题模式中心音应限定在错题范围')
+    s2.answerQuestion(s2.currentQuestion.correctIndices, 8000)
+    if (i < 1) s2.nextQuestion()
+  }
+  s2.nextQuestion()
+  assert.equal(s2.phase, 'finished', '错题题量答完应结束')
+  s2.reset()
+}
+
 console.log('All game store tests passed!')

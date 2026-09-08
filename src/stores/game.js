@@ -44,26 +44,34 @@ const SESSION_TICK_MS = 1000
 const TRAIN_MODES = ['time', 'count', 'wrong', 'custom']
 
 /**
- * 从错题记录中提取涉及的调名（音级错题）或根音（和弦错题）。
- * 支持完整错题对象（含 keyName/root 或 questionId）与字符串 id 形态。
+ * 从错题记录中提取涉及的调名（音级错题）、根音（和弦错题）或中心音（五度圈错题）。
+ * 支持完整错题对象（含 keyName/root/center 或 questionId）与字符串 id 形态。
  * @param {Array} wrongQuestions
- * @param {'scale'|'chord'} type
+ * @param {'scale'|'chord'|'circle'} type
  * @returns {string[]}
  */
 function extractScopeFromWrong(wrongQuestions, type) {
   const set = new Set()
-  const prefix = type === 'scale' ? 'scale:' : 'chord:'
+  const prefix =
+    type === 'scale' ? 'scale:' : type === 'chord' ? 'chord:' : 'circle:'
   for (const w of wrongQuestions ?? []) {
     if (w == null) continue
-    if (type === 'scale' && typeof w === 'object' && w.keyName) {
-      set.add(w.keyName)
-      continue
+    if (typeof w === 'object') {
+      if (type === 'scale' && w.keyName) {
+        set.add(w.keyName)
+        continue
+      }
+      if (type === 'chord' && w.root) {
+        set.add(w.root)
+        continue
+      }
+      if (type === 'circle' && w.center) {
+        set.add(w.center)
+        continue
+      }
     }
-    if (type === 'chord' && typeof w === 'object' && w.root) {
-      set.add(w.root)
-      continue
-    }
-    // 从 questionId / id / 字符串 id 中解析（格式 'scale:调:音级' 或 'chord:根音'）
+    // 从 questionId / id / 字符串 id 中解析
+    // （格式 'scale:调:音级'、'chord:根音' 或 'circle:中心音'）
     const raw = typeof w === 'string' ? w : (w.questionId ?? w.id ?? '')
     if (typeof raw === 'string' && raw.startsWith(prefix)) {
       const parts = raw.split(':')
@@ -82,8 +90,10 @@ export const useGameStore = defineStore('game', () => {
   const config = ref(null)
   /** 当前题目对象（来自 quiz/generator） */
   const currentQuestion = ref(null)
-  /** 用户已选选项索引；null=未作答，-1=超时未答 */
+  /** 用户已选选项索引；null=未作答，-1=超时未答（scale/chord 单选题使用） */
   const selectedIndex = ref(null)
+  /** 五度圈题两空作答结果 [左空选项索引, 右空选项索引]；null=该空未填 */
+  const selectedSlots = ref([null, null])
   /** 上一题判定结果 { isCorrect, reactionMs, gainedScore } */
   const lastResult = ref(null)
   /** 本轮总分 */
@@ -198,6 +208,7 @@ export const useGameStore = defineStore('game', () => {
       level: config.value.level,
       customKeys: config.value.customKeys,
       customRoots: config.value.customRoots,
+      customNotes: config.value.customNotes,
       wrongQuestions: wrongQuestionsPool,
       prevQuestionId: prevQuestionId.value,
       boostProbability,
@@ -238,7 +249,23 @@ export const useGameStore = defineStore('game', () => {
     if (question.type === 'scale') {
       return `第 ${degreeToRoman(question.options[index])} 级`
     }
+    if (question.type === 'circle') {
+      // index 参数对五度圈题无意义，正确答案固定取两空答案
+      return `下行 ${question.slots[0].answer} · 上行 ${question.slots[1].answer}`
+    }
     return question.options[index]?.text ?? '未知选项'
+  }
+
+  /**
+   * 五度圈题用户作答文本：把 [左空索引, 右空索引] 转为
+   * 「下行 X · 上行 Y」形式；未填（null/-1）显示「未填」。
+   */
+  function circleAnswerText(question, slots) {
+    const name = (i) =>
+      i == null || i < 0 || i >= question.options.length
+        ? '未填'
+        : question.options[i]
+    return `下行 ${name(slots?.[0])} · 上行 ${name(slots?.[1])}`
   }
 
   /** 构造一条错题记录 */
@@ -249,13 +276,19 @@ export const useGameStore = defineStore('game', () => {
       id: `wrong:${q.id}:${Date.now()}:${wrongRecordSeq}`,
       type: q.type,
       questionId: q.id,
-      // 音级题记 keyName，和弦题记 root，便于错题本筛选
-      ...(q.type === 'scale' ? { keyName: q.keyName } : { root: q.root }),
+      // 音级题记 keyName，和弦题记 root，五度圈题记 center，便于错题本筛选
+      ...(q.type === 'scale'
+        ? { keyName: q.keyName }
+        : q.type === 'chord'
+          ? { root: q.root }
+          : { center: q.center }),
       promptText:
         q.type === 'scale'
           ? `${q.keyName} 大调中，${q.promptNote} 是第几级？`
-          : `${q.root} 大三和弦的组成音是？`,
-      correctAnswer: optionText(q, q.correctIndex),
+          : q.type === 'chord'
+            ? `${q.root} 大三和弦的组成音是？`
+            : `五度圈中，${q.center} 左右相邻的音是？`,
+      correctAnswer: optionText(q, q.correctIndex ?? q.correctIndices?.[0]),
       userAnswer,
       reactionMs,
       timestamp: Date.now(),
@@ -272,6 +305,7 @@ export const useGameStore = defineStore('game', () => {
     reactionTimes.value = []
     wrongItems.value = []
     selectedIndex.value = null
+    selectedSlots.value = [null, null]
     lastResult.value = null
     currentQuestion.value = null
     sessionRemaining.value = null
@@ -322,7 +356,7 @@ export const useGameStore = defineStore('game', () => {
   /**
    * 开始一轮训练。
    * @param {object} trainConfig
-   * @param {'scale'|'chord'} trainConfig.type 训练类型
+   * @param {'scale'|'chord'|'circle'} trainConfig.type 训练类型
    * @param {number} [trainConfig.level=1] 难度等级
    * @param {'time'|'count'|'wrong'|'custom'} [trainConfig.trainMode='count'] 训练模式
    * @param {number} [trainConfig.timeLimit] 单题限时秒（自定义模式可覆盖，默认 15）
@@ -330,6 +364,7 @@ export const useGameStore = defineStore('game', () => {
    * @param {number} [trainConfig.totalQuestions] 题量模式题数（默认 20）
    * @param {string[]|null} [trainConfig.customKeys] 自定义调名
    * @param {string[]|null} [trainConfig.customRoots] 自定义根音
+   * @param {string[]|null} [trainConfig.customNotes] 五度圈自定义中心音
    * @param {Array} [trainConfig.wrongQuestions] 错题模式的错题记录（透传生成器）
    */
   function start(trainConfig = {}) {
@@ -342,11 +377,12 @@ export const useGameStore = defineStore('game', () => {
       totalQuestions,
       customKeys = null,
       customRoots = null,
+      customNotes = null,
       wrongQuestions = null,
     } = trainConfig
 
     // 配置校验
-    if (type !== 'scale' && type !== 'chord') {
+    if (type !== 'scale' && type !== 'chord' && type !== 'circle') {
       throw new Error(`start: 未知训练类型 type=${type}`)
     }
     if (!TRAIN_MODES.includes(trainMode)) {
@@ -386,11 +422,13 @@ export const useGameStore = defineStore('game', () => {
         Array.isArray(customKeys) && customKeys.length > 0 ? customKeys : null,
       customRoots:
         Array.isArray(customRoots) && customRoots.length > 0 ? customRoots : null,
+      customNotes:
+        Array.isArray(customNotes) && customNotes.length > 0 ? customNotes : null,
     }
 
     wrongQuestionsPool = Array.isArray(wrongQuestions) ? wrongQuestions : []
 
-    // 错题模式：出题范围限定为错题涉及的调/根音（错题可能跨多个调），
+    // 错题模式：出题范围限定为错题涉及的调/根音/中心音（错题可能跨多个），
     // 由生成器在该范围内按 boostProbability=1 只出错题
     if (trainMode === 'wrong' && wrongQuestionsPool.length > 0) {
       const scope = extractScopeFromWrong(wrongQuestionsPool, type)
@@ -398,6 +436,8 @@ export const useGameStore = defineStore('game', () => {
         config.value.customKeys = scope
       } else if (type === 'chord' && scope.length > 0) {
         config.value.customRoots = scope
+      } else if (type === 'circle' && scope.length > 0) {
+        config.value.customNotes = scope
       }
     }
 
@@ -414,10 +454,12 @@ export const useGameStore = defineStore('game', () => {
   /**
    * 作答。
    * 防抖：仅 phase==='answering' 有效，feedback/finished/idle 态调用直接忽略。
-   * @param {number} index 选项索引
+   * @param {number|number[]} answer scale/chord 为单选选项索引；
+   *   circle 五度圈题为两空索引数组 [左空(下行五度), 右空(上行五度)]，
+   *   两空全部填对方判正确。
    * @param {number} [injectedReactionMs] 测试注入的反应毫秒；默认真实计时
    */
-  function answerQuestion(index, injectedReactionMs) {
+  function answerQuestion(answer, injectedReactionMs) {
     if (phase.value !== 'answering' || !currentQuestion.value) return
     stopQuestionTimer()
     questionRemainingMs.value = 0
@@ -427,8 +469,24 @@ export const useGameStore = defineStore('game', () => {
       ? Math.max(0, injectedReactionMs)
       : Math.max(0, performance.now() - questionStartTime)
 
-    const isCorrect = index === q.correctIndex
-    selectedIndex.value = index
+    let isCorrect
+    let userAnswerText
+    if (q.type === 'circle') {
+      // 两空作答：[左空选项索引, 右空选项索引]，缺一即判错
+      const slots = Array.isArray(answer) ? answer : [null, null]
+      selectedSlots.value = [
+        Number.isInteger(slots[0]) ? slots[0] : null,
+        Number.isInteger(slots[1]) ? slots[1] : null,
+      ]
+      isCorrect =
+        selectedSlots.value[0] === q.correctIndices[0] &&
+        selectedSlots.value[1] === q.correctIndices[1]
+      userAnswerText = circleAnswerText(q, selectedSlots.value)
+    } else {
+      isCorrect = answer === q.correctIndex
+      selectedIndex.value = answer
+      userAnswerText = optionText(q, answer)
+    }
 
     let gainedScore = 0
     if (isCorrect) {
@@ -440,7 +498,7 @@ export const useGameStore = defineStore('game', () => {
       correctCount.value += 1
     } else {
       combo.value = 0
-      wrongItems.value.push(buildWrongItem(optionText(q, index), reactionMs))
+      wrongItems.value.push(buildWrongItem(userAnswerText, reactionMs))
     }
 
     answeredCount.value += 1
@@ -476,6 +534,7 @@ export const useGameStore = defineStore('game', () => {
     }
 
     selectedIndex.value = null
+    selectedSlots.value = [null, null]
     lastResult.value = null
     generateNextQuestion()
     phase.value = 'answering'
@@ -506,6 +565,7 @@ export const useGameStore = defineStore('game', () => {
     config,
     currentQuestion,
     selectedIndex,
+    selectedSlots,
     lastResult,
     score,
     combo,

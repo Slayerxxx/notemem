@@ -143,7 +143,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '../stores/settings.js'
 import { useWrongBookStore } from '../stores/wrongbook.js'
-import { SCALE_DIFFICULTIES, CHORD_DIFFICULTIES } from '../music/difficulty.js'
+import { SCALE_DIFFICULTIES, CHORD_DIFFICULTIES, CIRCLE_DIFFICULTIES } from '../music/difficulty.js'
 
 const router = useRouter()
 const settingsStore = useSettingsStore()
@@ -171,7 +171,7 @@ const MODES = [
   { value: 'wrong', label: '错题模式', icon: '🔁' },
 ]
 
-/** 两张训练卡片配置 */
+/** 训练卡片配置 */
 const CARDS = [
   {
     type: 'scale',
@@ -190,6 +190,15 @@ const CARDS = [
     difficulties: CHORD_DIFFICULTIES,
     levelKey: 'chordLevel',
     modeKey: 'chordTrainMode',
+  },
+  {
+    type: 'circle',
+    title: '五度圈训练',
+    tagline: '上下五度反应',
+    desc: '看到中心音，选出五度圈上左右相邻的两个音',
+    difficulties: CIRCLE_DIFFICULTIES,
+    levelKey: 'circleLevel',
+    modeKey: 'circleTrainMode',
   },
 ]
 
@@ -221,7 +230,9 @@ function selectMode(card, mode) {
 
 /** 该模块错题数 */
 function wrongCountOf(type) {
-  return type === 'scale' ? wrongbook.scaleCount : wrongbook.chordCount
+  if (type === 'scale') return wrongbook.scaleCount
+  if (type === 'chord') return wrongbook.chordCount
+  return wrongbook.circleCount
 }
 
 /** 难度 chip 副文案：音级显示调名，和弦显示段位名 */
