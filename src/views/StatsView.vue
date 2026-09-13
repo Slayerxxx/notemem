@@ -114,6 +114,7 @@ import {
   CHORD_DIFFICULTIES,
   CIRCLE_DIFFICULTIES,
 } from '../music/difficulty.js'
+import { PROGRESSION_DIFFICULTIES } from '../music/progression.js'
 
 const router = useRouter()
 const stats = useStatsStore()
@@ -122,12 +123,14 @@ const TABS = [
   { value: 'scale', label: '音级训练' },
   { value: 'chord', label: '和弦训练' },
   { value: 'circle', label: '五度圈训练' },
+  { value: 'progression', label: '进行训练' },
 ]
 
 /** 各模块难度池 */
 function poolOf(type) {
   if (type === 'scale') return SCALE_DIFFICULTIES
   if (type === 'circle') return CIRCLE_DIFFICULTIES
+  if (type === 'progression') return PROGRESSION_DIFFICULTIES
   return CHORD_DIFFICULTIES
 }
 

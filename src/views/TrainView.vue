@@ -27,12 +27,72 @@
 
     <!-- ============== 题干区 ============== -->
     <main class="question-area">
+      <!-- 进行题 manifest 加载中 / 失败占位 -->
+      <div v-if="isProgressionType && manifestLoading" class="question-card">
+        <p class="question-placeholder">正在准备题目资源…</p>
+      </div>
+      <div v-else-if="isProgressionType && manifestError" class="question-card">
+        <p class="question-placeholder">题目资源加载失败</p>
+        <button type="button" class="next-btn" @click="goHome">返回首页</button>
+      </div>
+
       <div
-        v-if="game.currentQuestion"
+        v-else-if="game.currentQuestion"
         :key="game.currentQuestion.id"
         class="question-card animate-fade-up"
       >
-        <p class="question-prompt">
+        <!-- 和弦进行题：题干 + 钢琴播放区 -->
+        <template v-if="isProgression">
+          <p class="question-prompt">{{ game.currentQuestion.promptText }}</p>
+          <div class="prog-player">
+            <button
+              type="button"
+              class="play-btn"
+              :class="{ playing: audioPlaying }"
+              :disabled="audioStatus === 'loading'"
+              :aria-label="audioPlaying ? '重新播放' : '播放和弦进行'"
+              @click="replay"
+            >
+              <span v-if="audioStatus === 'loading'" class="play-spinner" aria-hidden="true" />
+              <span v-else-if="audioStatus === 'error'" class="play-icon" aria-hidden="true">↻</span>
+              <span v-else class="play-icon" aria-hidden="true">
+                {{ audioPlaying ? '⟳' : '▶' }}
+              </span>
+            </button>
+            <div class="play-meta">
+              <div class="play-progress" aria-hidden="true">
+                <div
+                  class="play-progress-fill"
+                  :style="{ width: Math.round(playProgress * 100) + '%' }"
+                />
+              </div>
+              <p v-if="audioStatus === 'loading'" class="play-hint">音色加载中…</p>
+              <p v-else-if="audioStatus === 'error'" class="play-hint err">
+                {{ audioError || '播放失败，点击重试' }}
+              </p>
+              <p
+                v-else-if="synthFallback"
+                class="play-hint fallback"
+              >
+                音色加载失败，已使用合成音色
+              </p>
+              <p
+                v-else-if="game.phase === 'answering' && !game.timerArmed"
+                class="play-hint"
+              >
+                点击 ▶ 开始播放，计时随即开始
+              </p>
+              <p v-else-if="game.phase === 'feedback'" class="play-hint">
+                可点击 ▶ 再听一遍
+              </p>
+              <p v-else-if="game.phase === 'answering'" class="play-hint">
+                可点击 ▶ 重复收听
+              </p>
+            </div>
+          </div>
+        </template>
+
+        <p v-else class="question-prompt">
           <template v-if="isScale">
             {{ game.currentQuestion.keyName }} 大调中，<span
               class="note-em"
@@ -84,7 +144,7 @@
           </button>
         </div>
         <p
-          v-if="game.phase === 'answering'"
+          v-if="game.phase === 'answering' && !(isProgression && !game.timerArmed)"
           class="timer-seconds"
           :class="{ 'urgent-text': isUrgent }"
         >
@@ -132,6 +192,21 @@
           @click="pickOption(idx)"
         >
           {{ note }}
+        </button>
+      </div>
+
+      <!-- 和弦进行题：4 个竖向罗马数字序列选项（允许换行） -->
+      <div v-else-if="isProgression" class="prog-list">
+        <button
+          v-for="(opt, idx) in game.currentQuestion.options"
+          :key="idx"
+          type="button"
+          class="option-btn prog-btn"
+          :class="optionClass(idx)"
+          :disabled="game.phase !== 'answering'"
+          @click="answer(idx)"
+        >
+          <span class="prog-roman">{{ opt }}</span>
         </button>
       </div>
 
@@ -197,6 +272,7 @@ import { useStatsStore } from '../stores/stats.js'
 import { useSettingsStore } from '../stores/settings.js'
 import { degreeToRoman } from '../quiz/generator.js'
 import { unlockAudio, playCorrect, playWrong, playCombo } from '../sound/index.js'
+import { useProgressionAudio } from '../composables/useProgressionAudio.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -209,6 +285,39 @@ const settings = useSettingsStore()
 
 const isScale = computed(() => game.currentQuestion?.type === 'scale')
 const isCircle = computed(() => game.currentQuestion?.type === 'circle')
+const isProgression = computed(() => game.currentQuestion?.type === 'progression')
+/** 路由级判定：题目尚未生成（manifest 加载中）时也能显示进行题占位 */
+const isProgressionType = computed(() => route.query.type === 'progression')
+
+// ============== 和弦进行题：MIDI manifest + 音频播放 ==============
+
+/** manifest 加载中（progression 进入训练页时先 fetch） */
+const manifestLoading = ref(false)
+/** manifest 加载失败（网络 / 资源缺失） */
+const manifestError = ref(false)
+/** 已解析的 MIDI manifest（仅 progression 使用） */
+let midiManifest = null
+
+const {
+  status: audioStatus,
+  isPlaying: audioPlaying,
+  progress: playProgress,
+  synthFallback,
+  errorMessage: audioError,
+  play: playAudio,
+  stop: stopAudio,
+} = useProgressionAudio({
+  // 延迟计时：用户首次点 ▶ 播放时才启动单题倒计时（store 内幂等）
+  onFirstPlay: () => game.startProgressionTimer(),
+})
+
+/** 点击播放 / 反馈态复听 */
+function replay() {
+  const q = game.currentQuestion
+  if (!q || q.type !== 'progression') return
+  unlockAudio() // 首次用户手势解锁 AudioContext
+  playAudio(q.midiUrl, q.style)
+}
 
 // ============== 五度圈题：两空填选本地状态 ==============
 
@@ -227,6 +336,10 @@ watch(
   () => {
     slotPicks.value = [null, null]
     activeSlot.value = 0
+    // 进行题切题（含下一题 / 结束跳转）时掐断上一段音频
+    if (game.currentQuestion?.type === 'progression' || isProgression.value) {
+      stopAudio()
+    }
   }
 )
 
@@ -292,12 +405,13 @@ function romanOf(degree) {
   return degreeToRoman(degree)
 }
 
-/** 选项展示文本：音级题「第 N 级」，五度圈题音名，和弦题音名组合 */
+/** 选项展示文本：音级题「第 N 级」，五度圈题音名，和弦题音名组合，进行题罗马序列 */
 function optionLabel(idx) {
   const q = game.currentQuestion
   if (!q) return ''
   if (isScale.value) return `第 ${degreeToRoman(q.options[idx])} 级`
   if (isCircle.value) return q.options[idx] ?? ''
+  if (isProgression.value) return q.options[idx] ?? ''
   return q.options[idx]?.text ?? ''
 }
 
@@ -408,14 +522,22 @@ function optionClass(idx) {
 
 // ============== 流程控制 ==============
 
-const VALID_TYPES = ['scale', 'chord', 'circle']
+const VALID_TYPES = ['scale', 'chord', 'circle', 'progression']
 const VALID_MODES = ['time', 'count', 'wrong', 'custom']
+
+/** 各题型最高难度（与难度配置保持一致） */
+function maxLevelOf(type) {
+  if (type === 'scale') return 12
+  if (type === 'circle') return 2
+  if (type === 'progression') return 4
+  return 3
+}
 
 /** 解析路由 query 为训练配置；非法或缺错题时返回 null（回首页） */
 function parseQuery() {
   const q = route.query
   if (!VALID_TYPES.includes(q.type)) return null
-  const maxLevel = q.type === 'scale' ? 12 : q.type === 'circle' ? 2 : 3
+  const maxLevel = maxLevelOf(q.type)
   const level = Number.parseInt(q.level, 10)
   if (!Number.isInteger(level) || level < 1 || level > maxLevel) return null
 
@@ -440,12 +562,31 @@ function parseQuery() {
 /** 本轮结果是否已落库（防止重复记录） */
 let recorded = false
 
-onMounted(() => {
+onMounted(async () => {
   const cfg = parseQuery()
   if (!cfg) {
     router.replace('/')
     return
   }
+
+  // 进行题出题依赖构建产物 manifest：进入训练页先 fetch
+  if (cfg.type === 'progression') {
+    manifestLoading.value = true
+    manifestError.value = false
+    try {
+      const res = await fetch('/midi/manifest.json')
+      if (!res.ok) throw new Error(`manifest HTTP ${res.status}`)
+      midiManifest = await res.json()
+      cfg.manifest = midiManifest
+    } catch (err) {
+      console.warn('[TrainView] MIDI manifest 加载失败：', err)
+      manifestLoading.value = false
+      manifestError.value = true
+      return
+    }
+    manifestLoading.value = false
+  }
+
   recorded = false
   game.start(cfg)
 })
@@ -702,6 +843,137 @@ function goHome() {
   font-weight: 700;
   color: var(--text-color);
   font-variant-numeric: tabular-nums;
+}
+
+/* ============== 和弦进行题：播放器 ============== */
+.prog-player {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 4px;
+}
+
+.play-btn {
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: var(--primary-color);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 16px rgba(79, 124, 255, 0.35);
+}
+
+.play-btn:active:not(:disabled) {
+  transform: scale(0.94);
+  background: var(--primary-dark);
+}
+
+.play-btn.playing {
+  background: var(--primary-dark);
+}
+
+.play-btn:disabled {
+  opacity: 0.7;
+  box-shadow: none;
+}
+
+.play-icon {
+  font-size: 30px;
+  line-height: 1;
+}
+
+/* 加载中旋转指示 */
+.play-spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: prog-spin 0.8s linear infinite;
+}
+
+@keyframes prog-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.play-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.play-progress {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--border-color);
+  overflow: hidden;
+}
+
+.play-progress-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--primary-color);
+  transition: width 0.08s linear;
+}
+
+.play-hint {
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+.play-hint.err {
+  color: var(--err-color);
+  font-weight: 600;
+}
+
+.play-hint.fallback {
+  color: #b7791f;
+}
+
+/* 和弦进行题：竖向 4 个罗马数字序列选项 */
+.prog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prog-btn {
+  min-height: 56px;
+  padding: 10px 16px;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--card-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.prog-roman {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  line-height: 1.45;
+  color: var(--text-color);
+  text-align: center;
+  word-break: break-word;
+}
+
+.option-btn.correct .prog-roman {
+  color: var(--ok-dark);
+}
+
+.option-btn.wrong .prog-roman {
+  color: var(--err-dark);
 }
 
 /* 五度圈题：空位板（左空 ← 中心 → 右空） */

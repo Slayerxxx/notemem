@@ -56,6 +56,21 @@
           <span class="chip-sub">{{ d.label.split('·')[1]?.trim() }}</span>
         </button>
       </div>
+
+      <p class="group-label">和弦进行识别</p>
+      <div class="chip-scroll">
+        <button
+          v-for="d in PROGRESSION_DIFFICULTIES"
+          :key="d.level"
+          type="button"
+          class="chip"
+          :class="{ active: settings.settings.progressionLevel === d.level }"
+          @click="update({ progressionLevel: d.level })"
+        >
+          <span class="chip-main">L{{ d.level }}</span>
+          <span class="chip-sub">{{ d.name }}</span>
+        </button>
+      </div>
     </section>
 
     <!-- 默认训练模式 -->
@@ -99,6 +114,20 @@
           class="mode-btn"
           :class="{ active: settings.settings.circleTrainMode === m.value }"
           @click="update({ circleTrainMode: m.value })"
+        >
+          {{ m.label }}
+        </button>
+      </div>
+
+      <p class="group-label">和弦进行识别</p>
+      <div class="mode-row">
+        <button
+          v-for="m in MODE_OPTIONS"
+          :key="m.value"
+          type="button"
+          class="mode-btn"
+          :class="{ active: settings.settings.progressionTrainMode === m.value }"
+          @click="update({ progressionTrainMode: m.value })"
         >
           {{ m.label }}
         </button>
@@ -216,6 +245,7 @@ import {
   CHORD_DIFFICULTIES,
   CIRCLE_DIFFICULTIES,
 } from '../music/difficulty.js'
+import { PROGRESSION_DIFFICULTIES } from '../music/progression.js'
 
 const router = useRouter()
 const settings = useSettingsStore()

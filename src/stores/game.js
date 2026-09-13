@@ -21,6 +21,7 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { generateQuestion, degreeToRoman } from '../quiz/generator.js'
 import { DEFAULT_TIME_LIMIT } from '../music/difficulty.js'
+import { PROGRESSION_DIFFICULTIES } from '../music/progression.js'
 
 // ============== 模块级非响应式变量（不放入响应式 state） ==============
 
@@ -30,6 +31,12 @@ let questionTimerId = null
 let sessionTimerId = null
 /** 当前题目的开始时间戳（performance.now() 基准，毫秒） */
 let questionStartTime = 0
+/**
+ * 单题倒计时是否已启动。
+ * progression 题型为「延迟计时」：题目渲染后不启动，等待视图在用户首次
+ * 点击 ▶ 播放时调用 startProgressionTimer()；其余题型 start 时即启动。
+ */
+let questionTimerArmed = false
 /** 错题强化池（错题模式 start 时透传进来的错题记录，交给生成器加权） */
 let wrongQuestionsPool = []
 /** 错题记录自增序号，保证错题条目 id 唯一 */
@@ -43,42 +50,74 @@ const SESSION_TICK_MS = 1000
 /** 训练模式枚举 */
 const TRAIN_MODES = ['time', 'count', 'wrong', 'custom']
 
+/** 全部受支持的训练类型 */
+const TRAIN_TYPES = ['scale', 'chord', 'circle', 'progression']
+
 /**
  * 从错题记录中提取涉及的调名（音级错题）、根音（和弦错题）或中心音（五度圈错题）。
  * 支持完整错题对象（含 keyName/root/center 或 questionId）与字符串 id 形态。
+ * progression 错题返回 { mode, key, tokenHash } 对象数组。
  * @param {Array} wrongQuestions
- * @param {'scale'|'chord'|'circle'} type
- * @returns {string[]}
+ * @param {'scale'|'chord'|'circle'|'progression'} type
+ * @returns {string[]|object[]}
  */
 function extractScopeFromWrong(wrongQuestions, type) {
   const set = new Set()
   const prefix =
-    type === 'scale' ? 'scale:' : type === 'chord' ? 'chord:' : 'circle:'
+    type === 'scale'
+      ? 'scale:'
+      : type === 'chord'
+        ? 'chord:'
+        : type === 'circle'
+          ? 'circle:'
+          : 'progression:'
+
+  const add = (v) => {
+    if (v == null) return
+    const key = typeof v === 'object' ? JSON.stringify(v) : v
+    set.add(key)
+  }
+
   for (const w of wrongQuestions ?? []) {
     if (w == null) continue
     if (typeof w === 'object') {
       if (type === 'scale' && w.keyName) {
-        set.add(w.keyName)
+        add(w.keyName)
         continue
       }
       if (type === 'chord' && w.root) {
-        set.add(w.root)
+        add(w.root)
         continue
       }
       if (type === 'circle' && w.center) {
-        set.add(w.center)
+        add(w.center)
+        continue
+      }
+      if (
+        type === 'progression' &&
+        w.mode &&
+        w.key &&
+        w.tokenHash
+      ) {
+        add({ mode: w.mode, key: w.key, tokenHash: w.tokenHash })
         continue
       }
     }
     // 从 questionId / id / 字符串 id 中解析
-    // （格式 'scale:调:音级'、'chord:根音' 或 'circle:中心音'）
     const raw = typeof w === 'string' ? w : (w.questionId ?? w.id ?? '')
     if (typeof raw === 'string' && raw.startsWith(prefix)) {
       const parts = raw.split(':')
-      if (parts[1]) set.add(parts[1])
+      if (type === 'progression') {
+        // progression:<mode>:<key>:<tokenHash>
+        if (parts[1] && parts[2] && parts[3]) {
+          add({ mode: parts[1], key: parts[2], tokenHash: parts.slice(3).join(':') })
+        }
+      } else if (parts[1]) {
+        add(parts[1])
+      }
     }
   }
-  return [...set]
+  return [...set].map((k) => (typeof k === 'string' && k.startsWith('{') ? JSON.parse(k) : k))
 }
 
 export const useGameStore = defineStore('game', () => {
@@ -114,6 +153,11 @@ export const useGameStore = defineStore('game', () => {
   const sessionRemaining = ref(null)
   /** 当前单题剩余毫秒（供 UI 进度条） */
   const questionRemainingMs = ref(0)
+  /**
+   * 单题倒计时是否已启动（UI 可据此显示「点击播放开始计时」提示）。
+   * progression 题目渲染后为 false，用户首次点 ▶ 后变 true。
+   */
+  const timerArmed = ref(true)
   /** 上一题 id（传给生成器避免连续重复） */
   const prevQuestionId = ref(null)
 
@@ -209,6 +253,8 @@ export const useGameStore = defineStore('game', () => {
       customKeys: config.value.customKeys,
       customRoots: config.value.customRoots,
       customNotes: config.value.customNotes,
+      customProgressions: config.value.customProgressions,
+      manifest: config.value.manifest,
       wrongQuestions: wrongQuestionsPool,
       prevQuestionId: prevQuestionId.value,
       boostProbability,
@@ -244,7 +290,7 @@ export const useGameStore = defineStore('game', () => {
     return gained
   }
 
-  /** 取某选项的展示文本：音级题显示罗马数字音级，和弦题显示音名组合 */
+  /** 取某选项的展示文本：音级题显示罗马数字音级，和弦题显示音名组合，进行题显示罗马序列字符串 */
   function optionText(question, index) {
     if (question.type === 'scale') {
       return `第 ${degreeToRoman(question.options[index])} 级`
@@ -252,6 +298,12 @@ export const useGameStore = defineStore('game', () => {
     if (question.type === 'circle') {
       // index 参数对五度圈题无意义，正确答案固定取两空答案
       return `下行 ${question.slots[0].answer} · 上行 ${question.slots[1].answer}`
+    }
+    if (question.type === 'progression') {
+      // 进行题 options 为罗马数字序列字符串数组
+      return typeof index === 'number'
+        ? (question.options[index] ?? '未知选项')
+        : '未知选项'
     }
     return question.options[index]?.text ?? '未知选项'
   }
@@ -276,19 +328,27 @@ export const useGameStore = defineStore('game', () => {
       id: `wrong:${q.id}:${Date.now()}:${wrongRecordSeq}`,
       type: q.type,
       questionId: q.id,
-      // 音级题记 keyName，和弦题记 root，五度圈题记 center，便于错题本筛选
+      // 音级题记 keyName，和弦题记 root，五度圈题记 center，进行题记
+      // mode/key/tokenHash（错题模式据此还原出题范围）
       ...(q.type === 'scale'
         ? { keyName: q.keyName }
         : q.type === 'chord'
           ? { root: q.root }
-          : { center: q.center }),
+          : q.type === 'progression'
+            ? { mode: q.mode, key: q.key, tokenHash: q.tokenHash }
+            : { center: q.center }),
       promptText:
         q.type === 'scale'
           ? `${q.keyName} 大调中，${q.promptNote} 是第几级？`
           : q.type === 'chord'
             ? `${q.root} 大三和弦的组成音是？`
-            : `五度圈中，${q.center} 左右相邻的音是？`,
-      correctAnswer: optionText(q, q.correctIndex ?? q.correctIndices?.[0]),
+            : q.type === 'progression'
+              ? q.promptText
+              : `五度圈中，${q.center} 左右相邻的音是？`,
+      correctAnswer:
+        q.type === 'progression'
+          ? q.correctAnswer
+          : optionText(q, q.correctIndex ?? q.correctIndices?.[0]),
       userAnswer,
       reactionMs,
       timestamp: Date.now(),
@@ -310,6 +370,8 @@ export const useGameStore = defineStore('game', () => {
     currentQuestion.value = null
     sessionRemaining.value = null
     questionRemainingMs.value = 0
+    questionTimerArmed = false
+    timerArmed.value = true
     prevQuestionId.value = null
   }
 
@@ -363,15 +425,19 @@ export const useGameStore = defineStore('game', () => {
   /**
    * 开始一轮训练。
    * @param {object} trainConfig
-   * @param {'scale'|'chord'|'circle'} trainConfig.type 训练类型
+   * @param {'scale'|'chord'|'circle'|'progression'} trainConfig.type 训练类型
    * @param {number} [trainConfig.level=1] 难度等级
    * @param {'time'|'count'|'wrong'|'custom'} [trainConfig.trainMode='count'] 训练模式
-   * @param {number} [trainConfig.timeLimit] 单题限时秒（自定义模式可覆盖，默认 15）
+   * @param {number} [trainConfig.timeLimit] 单题限时秒（自定义模式可覆盖；
+   *   progression 未传时取该难度配置 L1-L4: 20/18/16/14 秒）
    * @param {number} [trainConfig.sessionTime] 限时模式总秒数（默认 60）
    * @param {number} [trainConfig.totalQuestions] 题量模式题数（默认 20）
    * @param {string[]|null} [trainConfig.customKeys] 自定义调名
    * @param {string[]|null} [trainConfig.customRoots] 自定义根音
    * @param {string[]|null} [trainConfig.customNotes] 五度圈自定义中心音
+   * @param {Array<{mode:string,key:string,tokenHash:string}>|string[]|null}
+   *   [trainConfig.customProgressions] 进行题自定义/错题范围（对象或 questionId）
+   * @param {object|null} [trainConfig.manifest] 进行题 MIDI manifest（type=progression 必填）
    * @param {Array} [trainConfig.wrongQuestions] 错题模式的错题记录（透传生成器）
    */
   function start(trainConfig = {}) {
@@ -385,15 +451,28 @@ export const useGameStore = defineStore('game', () => {
       customKeys = null,
       customRoots = null,
       customNotes = null,
+      customProgressions = null,
+      manifest = null,
       wrongQuestions = null,
     } = trainConfig
 
     // 配置校验
-    if (type !== 'scale' && type !== 'chord' && type !== 'circle') {
+    if (!TRAIN_TYPES.includes(type)) {
       throw new Error(`start: 未知训练类型 type=${type}`)
     }
     if (!TRAIN_MODES.includes(trainMode)) {
       throw new Error(`start: 未知训练模式 trainMode=${trainMode}`)
+    }
+    if (type === 'progression' && (!manifest || typeof manifest !== 'object')) {
+      throw new Error('start: progression 训练必须提供 manifest')
+    }
+
+    // progression 未显式给限时：取难度档位默认（20/18/16/14 秒）
+    let defaultTimeLimit = DEFAULT_TIME_LIMIT
+    if (type === 'progression') {
+      const diff = PROGRESSION_DIFFICULTIES.find((d) => d.level === level)
+      if (!diff) throw new Error(`start: progression 非法难度 level=${level}`)
+      defaultTimeLimit = diff.timeLimit
     }
 
     // 清理上一轮计时器与统计状态
@@ -403,7 +482,7 @@ export const useGameStore = defineStore('game', () => {
 
     const isTimeMode = trainMode === 'time'
     const resolvedTimeLimit =
-      Number(timeLimit) > 0 ? Number(timeLimit) : DEFAULT_TIME_LIMIT
+      Number(timeLimit) > 0 ? Number(timeLimit) : defaultTimeLimit
 
     config.value = {
       type,
@@ -431,11 +510,16 @@ export const useGameStore = defineStore('game', () => {
         Array.isArray(customRoots) && customRoots.length > 0 ? customRoots : null,
       customNotes:
         Array.isArray(customNotes) && customNotes.length > 0 ? customNotes : null,
+      customProgressions:
+        Array.isArray(customProgressions) && customProgressions.length > 0
+          ? customProgressions
+          : null,
+      manifest: type === 'progression' ? manifest : null,
     }
 
     wrongQuestionsPool = Array.isArray(wrongQuestions) ? wrongQuestions : []
 
-    // 错题模式：出题范围限定为错题涉及的调/根音/中心音（错题可能跨多个），
+    // 错题模式：出题范围限定为错题涉及的调/根音/中心音/进行（错题可能跨多个），
     // 由生成器在该范围内按 boostProbability=1 只出错题
     if (trainMode === 'wrong' && wrongQuestionsPool.length > 0) {
       const scope = extractScopeFromWrong(wrongQuestionsPool, type)
@@ -445,17 +529,43 @@ export const useGameStore = defineStore('game', () => {
         config.value.customRoots = scope
       } else if (type === 'circle' && scope.length > 0) {
         config.value.customNotes = scope
+      } else if (type === 'progression' && scope.length > 0) {
+        config.value.customProgressions = scope
       }
     }
 
     sessionRemaining.value = isTimeMode ? config.value.sessionTime : null
     questionRemainingMs.value = resolvedTimeLimit * 1000
 
-    // 出第一题并启动计时
+    // 出第一题
     phase.value = 'answering'
     generateNextQuestion()
-    startQuestionTimer()
+
+    // progression 延迟计时：题目渲染后不启动单题倒计时，
+    // 等视图在用户首次点 ▶ 播放时调 startProgressionTimer()；
+    // 其余题型立即启动
+    if (type === 'progression') {
+      questionTimerArmed = false
+      timerArmed.value = false
+    } else {
+      questionTimerArmed = true
+      timerArmed.value = true
+      startQuestionTimer()
+    }
     if (isTimeMode) startSessionTimer()
+  }
+
+  /**
+   * progression 专属：用户首次点击播放时启动单题倒计时（延迟计时）。
+   * 幂等——重复调用只生效一次；非 progression 题型直接忽略。
+   */
+  function startProgressionTimer() {
+    if (config.value?.type !== 'progression') return
+    if (phase.value !== 'answering') return
+    if (questionTimerArmed) return
+    questionTimerArmed = true
+    timerArmed.value = true
+    startQuestionTimer()
   }
 
   /**
@@ -468,10 +578,16 @@ export const useGameStore = defineStore('game', () => {
    */
   function answerQuestion(answer, injectedReactionMs) {
     if (phase.value !== 'answering' || !currentQuestion.value) return
+
+    const q = currentQuestion.value
+    // 双保险：progression 用户未点播放就直接作答，此刻起计时（反应时间≈0）
+    if (q.type === 'progression' && !questionTimerArmed) {
+      startProgressionTimer()
+    }
+
     stopQuestionTimer()
     questionRemainingMs.value = 0
 
-    const q = currentQuestion.value
     const reactionMs = Number.isFinite(injectedReactionMs)
       ? Math.max(0, injectedReactionMs)
       : Math.max(0, performance.now() - questionStartTime)
@@ -559,7 +675,16 @@ export const useGameStore = defineStore('game', () => {
     lastResult.value = null
     generateNextQuestion()
     phase.value = 'answering'
-    startQuestionTimer()
+    // progression：新题重新进入「等待播放」态，倒计时仍不启动
+    if (config.value.type === 'progression') {
+      questionTimerArmed = false
+      timerArmed.value = false
+      questionRemainingMs.value = config.value.timeLimit * 1000
+    } else {
+      questionTimerArmed = true
+      timerArmed.value = true
+      startQuestionTimer()
+    }
   }
 
   /** 结束本轮：停止所有计时器，进入 finished 态，返回汇总数据 */
@@ -597,12 +722,14 @@ export const useGameStore = defineStore('game', () => {
     wrongItems,
     sessionRemaining,
     questionRemainingMs,
+    timerArmed,
     prevQuestionId,
     // getters
     summary,
     progressText,
     // actions
     start,
+    startProgressionTimer,
     answerQuestion,
     setCircleSlots,
     timeoutQuestion,

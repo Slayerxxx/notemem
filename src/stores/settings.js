@@ -3,7 +3,7 @@
  * 用户设置 Store（Pinia setup 风格）。
  *
  * 职责：
- * - 持久化两个训练模块的默认难度 / 训练模式、音效开关、自定义模式预设；
+ * - 持久化四个训练模块的默认难度 / 训练模式、音效开关、自定义模式预设；
  * - 每次变更后自动写入 localStorage（notemem_settings）；
  * - 读取失败或字段缺失时使用默认值合并兜底。
  */
@@ -20,12 +20,16 @@ const DEFAULT_SETTINGS = {
   chordLevel: 1,
   /** 五度圈训练默认难度（L1-L2） */
   circleLevel: 1,
+  /** 和弦进行识别训练默认难度（L1-L4） */
+  progressionLevel: 1,
   /** 音级默认训练模式：time | count | wrong | custom */
   scaleTrainMode: 'count',
   /** 和弦默认训练模式 */
   chordTrainMode: 'count',
   /** 五度圈默认训练模式 */
   circleTrainMode: 'count',
+  /** 和弦进行识别默认训练模式 */
+  progressionTrainMode: 'count',
   /** 音效开关 */
   soundEnabled: true,
   /** 自定义模式预设（用户保存的配置数组） */

@@ -584,4 +584,100 @@ function withStorage(storageLike, fn) {
   assert.equal(settings2.settings.circleLevel, 1)
 }
 
+// ============== 和弦进行（progression）错题 / 设置 / 统计 ==============
+{
+  freshPinia()
+  const wb = useWrongBookStore()
+  const stats = useStatsStore()
+  const settings = useSettingsStore()
+
+  // settings 默认值含 progression 字段
+  assert.equal(settings.settings.progressionLevel, 1, 'progressionLevel 默认应为 1')
+  assert.equal(
+    settings.settings.progressionTrainMode, 'count',
+    'progressionTrainMode 默认应为 count'
+  )
+
+  // 构造 2 条 progression 错题（结构与 game store buildWrongItem 一致）
+  const progWrong = (mode, key, tokenHash, overrides = {}) => ({
+    id: `wrong:progression:${mode}:${key}:${tokenHash}:${Date.now()}:${Math.random()}`,
+    type: 'progression',
+    questionId: `progression:${mode}:${key}:${tokenHash}`,
+    mode,
+    key,
+    tokenHash,
+    promptText: `请听这段大调和弦进行，调性：${key} 大调`,
+    correctAnswer: 'I · V · vi · IV',
+    userAnswer: 'I · vi · V · IV',
+    reactionMs: 9000,
+    timestamp: Date.now(),
+    ...overrides,
+  })
+  const p1 = progWrong('major', 'C', 'abc123')
+  const p2 = progWrong('minor', 'A', 'xyz789', {
+    promptText: '请听这段小调和弦进行，调性：A 小调',
+  })
+  wb.addItems([
+    makeWrong('scale', 'scale:C:1'),
+    p1,
+    p2,
+  ])
+  assert.equal(wb.count, 3)
+  assert.equal(wb.progressionCount, 2, 'progressionCount 应统计进行题错题')
+  assert.equal(wb.scaleCount, 1)
+  assert.equal(wb.getByType('progression').length, 2)
+  const progQs = wb.getWrongQuestions('progression')
+  assert.ok(
+    progQs.every((q) =>
+      q.questionId.startsWith('progression:') &&
+      q.mode && q.key && q.tokenHash
+    ),
+    'getWrongQuestions 返回的记录应含 questionId 与 mode/key/tokenHash'
+  )
+
+  // 刷新后 progression 错题（含三元组）完整持久化
+  simulateRefresh()
+  const wb2 = useWrongBookStore()
+  assert.equal(wb2.progressionCount, 2)
+  const reloaded = wb2.getByType('progression')
+  assert.ok(reloaded.some((i) => i.questionId === p1.questionId &&
+    i.mode === 'major' && i.key === 'C' && i.tokenHash === 'abc123'))
+  assert.ok(reloaded.some((i) => i.questionId === p2.questionId && i.mode === 'minor'))
+
+  // clearAll('progression') 只清进行题，其余模块保留
+  wb2.clearAll('progression')
+  assert.equal(wb2.progressionCount, 0)
+  assert.equal(wb2.scaleCount, 1, '音级错题应保留')
+
+  // stats 支持 progression 维度（键为 progression_<level>）
+  stats.recordSession({
+    type: 'progression', level: 3, score: 95, total: 10, correct: 7,
+    reactionTimes: reactionTimes(10, 4000, 100),
+  })
+  const pr = stats.getRecord('progression', 3)
+  assert.equal(pr.bestScore, 95)
+  assert.equal(pr.sessions, 1)
+  assert.equal(stats.getRecord('progression', 1), null)
+  assert.ok(Math.abs(stats.accuracyOf('progression', 3) - 0.7) < 1e-9)
+
+  // progression 设置更新 / 重置
+  settings.update({ progressionLevel: 4, progressionTrainMode: 'time' })
+  assert.equal(settings.settings.progressionLevel, 4)
+  assert.equal(settings.settings.progressionTrainMode, 'time')
+  settings.reset()
+  assert.equal(settings.settings.progressionLevel, 1)
+  assert.equal(settings.settings.progressionTrainMode, 'count')
+
+  // 刷新后清空结果 / 统计 / 设置均持久化
+  simulateRefresh()
+  const wb3 = useWrongBookStore()
+  const stats2 = useStatsStore()
+  const settings2 = useSettingsStore()
+  assert.equal(wb3.progressionCount, 0)
+  assert.equal(wb3.scaleCount, 1)
+  assert.equal(stats2.getRecord('progression', 3).bestScore, 95, 'progression 统计应持久化')
+  assert.equal(settings2.settings.progressionLevel, 1)
+  assert.equal(settings2.settings.progressionTrainMode, 'count')
+}
+
 console.log('All storage layer tests passed!')

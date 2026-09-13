@@ -46,6 +46,11 @@ export const useWrongBookStore = defineStore('wrongbook', () => {
   /** 五度圈训练错题数 */
   const circleCount = computed(() => items.value.filter((i) => i?.type === 'circle').length)
 
+  /** 和弦进行识别训练错题数 */
+  const progressionCount = computed(
+    () => items.value.filter((i) => i?.type === 'progression').length
+  )
+
   // ============== 内部工具 ==============
 
   /** 持久化到 localStorage */
@@ -110,10 +115,15 @@ export const useWrongBookStore = defineStore('wrongbook', () => {
 
   /**
    * 清空错题。
-   * @param {'scale'|'chord'|'circle'} [type] 不传则清空全部；传入则只清该模块
+   * @param {'scale'|'chord'|'circle'|'progression'} [type] 不传则清空全部；传入则只清该模块
    */
   function clearAll(type) {
-    if (type === 'scale' || type === 'chord' || type === 'circle') {
+    if (
+      type === 'scale' ||
+      type === 'chord' ||
+      type === 'circle' ||
+      type === 'progression'
+    ) {
       items.value = items.value.filter((item) => item?.type !== type)
     } else {
       items.value = []
@@ -123,7 +133,7 @@ export const useWrongBookStore = defineStore('wrongbook', () => {
 
   /**
    * 按模块筛选错题。
-   * @param {'scale'|'chord'|'circle'} type
+   * @param {'scale'|'chord'|'circle'|'progression'} type
    * @returns {Array}
    */
   function getByType(type) {
@@ -133,7 +143,7 @@ export const useWrongBookStore = defineStore('wrongbook', () => {
   /**
    * 返回供题目生成器使用的错题数组（该模块全部记录，
    * 生成器通过 questionId 字段识别题目并加权）。
-   * @param {'scale'|'chord'|'circle'} type
+   * @param {'scale'|'chord'|'circle'|'progression'} type
    * @returns {Array}
    */
   function getWrongQuestions(type) {
@@ -148,6 +158,7 @@ export const useWrongBookStore = defineStore('wrongbook', () => {
     scaleCount,
     chordCount,
     circleCount,
+    progressionCount,
     // actions
     addItems,
     removeItem,

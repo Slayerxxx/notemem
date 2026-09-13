@@ -38,3 +38,18 @@ export {
   stepAlongCircle,
   toFlatName,
 } from './circle.js'
+
+export {
+  PROGRESSION_KEYS,
+  MODE_NAMES,
+  PROGRESSION_DIFFICULTIES,
+  parseProgressionFilename,
+  normalizeStyleDir,
+  hashProgression,
+  getBpmForStyle,
+  progressionQuestionId,
+  buildProgressionPrompt,
+  isPureTriadToken,
+  hasExtendedToken,
+  getProgressionPoolByLevel,
+} from './progression.js'

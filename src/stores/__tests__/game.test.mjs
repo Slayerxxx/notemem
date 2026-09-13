@@ -621,4 +621,151 @@ function answerWrong(store, reactionMs = 8000) {
   s2.reset()
 }
 
+// ============== 和弦进行题（progression）：配置校验与延迟计时 ==============
+{
+  const { readFileSync } = await import('node:fs')
+  const manifest = JSON.parse(
+    readFileSync(new URL('../../../public/midi/manifest.json', import.meta.url))
+  )
+
+  // —— 缺 manifest 必须抛错 ——
+  assert.throws(
+    () => freshStore().start({ type: 'progression', level: 1 }),
+    /manifest/
+  )
+  // —— 非法难度抛错 ——
+  assert.throws(
+    () => freshStore().start({ type: 'progression', level: 9, manifest }),
+    /非法难度/
+  )
+
+  // —— 各难度默认限时取 PROGRESSION_DIFFICULTIES：20/18/16/14 秒 ——
+  for (const [level, limit] of [[1, 20], [2, 18], [3, 16], [4, 14]]) {
+    const s = freshStore()
+    s.start({ type: 'progression', level, trainMode: 'count', manifest })
+    assert.equal(s.config.timeLimit, limit, `L${level} 默认限时 ${limit}s`)
+    assert.equal(s.currentQuestion.type, 'progression')
+    assert.equal(s.currentQuestion.options.length, 4)
+    assert.equal(s.currentQuestion.style, 'baseline')
+    s.reset()
+  }
+
+  // —— 延迟计时：start 后倒计时不启动，满额保持 ——
+  const s = freshStore()
+  s.start({
+    type: 'progression', level: 1, trainMode: 'count', manifest,
+    totalQuestions: 5,
+  })
+  assert.equal(s.timerArmed, false, '题目渲染后 timerArmed=false')
+  assert.equal(s.questionRemainingMs, 20000)
+  await new Promise((r) => setTimeout(r, 250))
+  assert.equal(
+    s.questionRemainingMs, 20000,
+    '未点播放，250ms 后剩余时间应保持满额'
+  )
+  assert.equal(s.phase, 'answering')
+
+  // startProgressionTimer 幂等，且非 progression 题型直接忽略
+  s.startProgressionTimer()
+  assert.equal(s.timerArmed, true, '首次播放后 timerArmed=true')
+  s.startProgressionTimer() // 重复调用不应重置计时基准
+  await new Promise((r) => setTimeout(r, 200))
+  assert.ok(
+    s.questionRemainingMs < 20000 && s.questionRemainingMs > 19000,
+    `计时启动后应开始递减：${s.questionRemainingMs}`
+  )
+
+  // —— 作答：答对，错题不入库；选项文本为字符串 ——
+  const q0 = s.currentQuestion
+  const optText = q0.options[q0.correctIndex]
+  assert.equal(typeof optText, 'string')
+  s.answerQuestion(q0.correctIndex, 5000)
+  assert.equal(s.phase, 'feedback', '作答后停留 feedback 不自动跳转')
+  assert.equal(s.lastResult.isCorrect, true)
+  assert.equal(s.correctCount, 1)
+  assert.equal(s.wrongItems.length, 0)
+
+  // —— 下一题后重新进入等待播放态 ——
+  s.nextQuestion()
+  assert.equal(s.phase, 'answering')
+  assert.equal(s.timerArmed, false, '新题 timerArmed 重置为 false')
+  assert.equal(s.questionRemainingMs, 20000, '新题剩余时间恢复满额')
+
+  // —— 答错：错题记录含 mode/key/tokenHash 与进行题题干 ——
+  const q1 = s.currentQuestion
+  const wrongIdx = (q1.correctIndex + 1) % 4
+  s.startProgressionTimer()
+  s.answerQuestion(wrongIdx, 7000)
+  assert.equal(s.wrongItems.length, 1)
+  const item = s.wrongItems[0]
+  assert.equal(item.type, 'progression')
+  assert.equal(item.questionId, q1.id)
+  assert.equal(item.mode, q1.mode)
+  assert.equal(item.key, q1.key)
+  assert.equal(item.tokenHash, q1.tokenHash)
+  assert.equal(item.promptText, q1.promptText)
+  assert.equal(item.correctAnswer, q1.correctAnswer)
+  assert.equal(item.userAnswer, q1.options[wrongIdx])
+  assert.match(item.id, /^wrong:progression:/)
+  s.reset()
+
+  // —— 未点播放直接作答：兜底起计时，reaction 注入值生效 ——
+  const s2 = freshStore()
+  s2.start({
+    type: 'progression', level: 1, trainMode: 'count', manifest,
+    totalQuestions: 3,
+  })
+  assert.equal(s2.timerArmed, false)
+  s2.answerQuestion(s2.currentQuestion.correctIndex, 1000)
+  assert.equal(s2.timerArmed, true)
+  assert.equal(s2.lastResult.reactionMs, 1000)
+  s2.reset()
+
+  // —— 错题模式：从错题记录还原 progression 出题范围 ——
+  const seedQ = (() => {
+    const t = freshStore()
+    t.start({ type: 'progression', level: 2, trainMode: 'count', manifest })
+    return t.currentQuestion
+  })()
+  const s3 = freshStore()
+  s3.start({
+    type: 'progression',
+    level: 2,
+    trainMode: 'wrong',
+    manifest,
+    wrongQuestions: [
+      {
+        id: 'wrong:prog:x',
+        questionId: seedQ.id,
+        type: 'progression',
+        mode: seedQ.mode,
+        key: seedQ.key,
+        tokenHash: seedQ.tokenHash,
+      },
+    ],
+  })
+  assert.equal(s3.config.totalQuestions, 1)
+  assert.deepEqual(
+    s3.config.customProgressions,
+    [{ mode: seedQ.mode, key: seedQ.key, tokenHash: seedQ.tokenHash }]
+  )
+  assert.equal(s3.currentQuestion.id, seedQ.id, '错题模式只出错题范围内的进行')
+  s3.answerQuestion(seedQ.correctIndex, 4000)
+  s3.nextQuestion()
+  assert.equal(s3.phase, 'finished')
+  s3.reset()
+
+  // —— 字符串 questionId 形态同样可提取范围 ——
+  const s4 = freshStore()
+  s4.start({
+    type: 'progression',
+    level: 2,
+    trainMode: 'wrong',
+    manifest,
+    wrongQuestions: [`progression:${seedQ.mode}:${seedQ.key}:${seedQ.tokenHash}`],
+  })
+  assert.equal(s4.currentQuestion.id, seedQ.id)
+  s4.reset()
+}
+
 console.log('All game store tests passed!')

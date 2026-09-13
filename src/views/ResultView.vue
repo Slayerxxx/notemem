@@ -89,6 +89,7 @@ import {
   CHORD_DIFFICULTIES,
   CIRCLE_DIFFICULTIES,
 } from '../music/difficulty.js'
+import { PROGRESSION_DIFFICULTIES } from '../music/progression.js'
 
 const router = useRouter()
 const game = useGameStore()
@@ -139,14 +140,18 @@ const scopeText = computed(() => {
       ? SCALE_DIFFICULTIES
       : c.type === 'circle'
         ? CIRCLE_DIFFICULTIES
-        : CHORD_DIFFICULTIES
+        : c.type === 'progression'
+          ? PROGRESSION_DIFFICULTIES
+          : CHORD_DIFFICULTIES
   const diff = diffPool.find((d) => d.level === c.level)
   const typeText =
     c.type === 'scale'
       ? `${diff?.key ?? ''} 大调音级`
       : c.type === 'circle'
         ? '五度圈相邻音'
-        : '和弦组成音'
+        : c.type === 'progression'
+          ? '和弦进行识别'
+          : '和弦组成音'
   const modeText =
     c.trainMode === 'time'
       ? `限时 ${c.sessionTime / 60} 分钟`
@@ -169,6 +174,10 @@ function replay() {
     level: c.level,
     trainMode: c.trainMode,
     timeLimit: c.timeLimit,
+  }
+  // 进行题出题依赖 manifest（config 中已持有本轮加载的实例）
+  if (c.type === 'progression') {
+    next.manifest = c.manifest
   }
   if (c.trainMode === 'count') next.totalQuestions = c.totalQuestions
   if (c.trainMode === 'time') next.sessionTime = c.sessionTime

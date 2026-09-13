@@ -16,12 +16,17 @@ import {
   generateScaleQuestion,
   generateChordQuestion,
   generateCircleQuestion,
+  generateProgressionQuestion,
   generateQuestion,
   pickWeighted,
   CHORD_DISTRACTOR_STRATEGIES,
   DISTRACTOR_ADJACENT,
   DISTRACTOR_MINOR,
   DISTRACTOR_INTERVAL,
+  DISTRACTOR_SWAP,
+  DISTRACTOR_REPLACE,
+  DISTRACTOR_OTHER,
+  PROGRESSION_OPTION_SEP,
 } from '../generator.js'
 
 import {
@@ -35,6 +40,7 @@ import {
   getFifthNeighbors,
   stepAlongCircle,
   NOTE_TO_POSITION,
+  hashProgression,
 } from '../../music/index.js'
 
 // 统计数组中各值出现次数
@@ -439,6 +445,147 @@ for (const level of [1, 2]) {
     const q = generateCircleQuestion({ level: 2, prevQuestionId: prevId })
     assert.notEqual(q.id, prevId, '五度圈题不应与上一题 id 完全相同')
     prevId = q.id
+  }
+}
+
+// ============== 和弦进行题（progression） ==============
+{
+  // 读取构建产物 manifest（与浏览器运行时 fetch /midi/manifest.json 同源数据）
+  const { readFileSync } = await import('node:fs')
+  const manifest = JSON.parse(
+    readFileSync(new URL('../../../public/midi/manifest.json', import.meta.url))
+  )
+
+  const PURE_TRIAD_RE = /^[ivIV]+$/
+  const ID_RE = /^progression:(major|minor|modal):(A|Ab|B|Bb|C|D|Db|E|Eb|F|G|Gb):[0-9a-z]+$/
+
+  // 各难度批量生成 200 题，结构断言
+  for (const level of [1, 2, 3, 4]) {
+    for (let i = 0; i < 200; i++) {
+      const q = generateProgressionQuestion({ level, manifest })
+
+      assert.equal(q.type, 'progression')
+      assert.ok(ID_RE.test(q.id), `id 形态合法：${q.id}`)
+      assert.equal(q.id, `progression:${q.mode}:${q.key}:${q.tokenHash}`)
+      assert.equal(q.style, 'baseline')
+      assert.ok(/^\/midi\//.test(q.midiUrl), 'midiUrl 相对站根')
+      assert.ok(q.promptText.length > 0)
+
+      assert.equal(q.options.length, 4, '固定 4 个选项')
+      assert.ok(q.options.every((o) => typeof o === 'string'))
+      // 4 个选项 tokenHash 两两不同
+      const hashes = q.options.map((o) =>
+        hashProgression(o.split(PROGRESSION_OPTION_SEP))
+      )
+      assert.equal(new Set(hashes).size, 4, `L${level} 选项 hash 两两不同：${q.options.join(' | ')}`)
+
+      // correctIndex 指向正确进行
+      assert.ok(q.correctIndex >= 0 && q.correctIndex < 4)
+      assert.equal(q.options[q.correctIndex], q.correctAnswer)
+      assert.ok(q.explanation.includes(q.correctAnswer))
+
+      // 干扰项至少含 1 个顺序调换或 token 替换策略
+      const distractorStrategies = q.optionStrategies.filter((s) => s !== 'correct')
+      assert.equal(distractorStrategies.length, 3)
+      assert.ok(
+        distractorStrategies.includes(DISTRACTOR_SWAP) ||
+          distractorStrategies.includes(DISTRACTOR_REPLACE),
+        `L${level} 干扰项应含 swap/replace：${distractorStrategies.join(',')}`
+      )
+
+      // mode 与难度一致
+      if (level === 1 || level === 2) assert.equal(q.mode, 'major')
+      if (level === 3) assert.equal(q.mode, 'minor')
+      if (level === 4) assert.equal(q.mode, 'modal')
+
+      // L1 全部选项 token 均为无后缀纯三和弦（替换干扰项同样合法）
+      if (level === 1) {
+        for (const opt of q.options) {
+          assert.ok(
+            opt.split(PROGRESSION_OPTION_SEP).every((t) => PURE_TRIAD_RE.test(t)),
+            `L1 选项含非三和弦 token：${opt}`
+          )
+        }
+      }
+    }
+  }
+
+  // 错题加权：错题 id 命中率应显著高于随机（50% 概率优先）
+  {
+    // 固定一道 L1 错题
+    const target = generateProgressionQuestion({ level: 1, manifest })
+    const wrong = [{ id: 'wrong:x', questionId: target.id }]
+    let hits = 0
+    const N = 300
+    for (let i = 0; i < N; i++) {
+      const q = generateProgressionQuestion({
+        level: 1,
+        manifest,
+        wrongQuestions: wrong,
+      })
+      if (q.id === target.id) hits += 1
+    }
+    assert.ok(
+      hits / N > 0.35,
+      `错题加权命中率应 >35%，实际 ${(hits / N).toFixed(2)}`
+    )
+  }
+
+  // 错题模式：customProgressions 限定出题 id 集合
+  {
+    const seeds = []
+    const seen = new Set()
+    while (seeds.length < 5) {
+      const q = generateProgressionQuestion({ level: 3, manifest })
+      if (!seen.has(q.id)) {
+        seen.add(q.id)
+        seeds.push(q)
+      }
+    }
+    const scope = seeds.map((q) => ({ mode: q.mode, key: q.key, tokenHash: q.tokenHash }))
+    for (let i = 0; i < 100; i++) {
+      const q = generateProgressionQuestion({
+        level: 3,
+        manifest,
+        customProgressions: scope,
+      })
+      assert.ok(seen.has(q.id), `错题模式只应出范围内题目：${q.id}`)
+    }
+    // id 字符串形态的范围同样生效
+    const q2 = generateProgressionQuestion({
+      level: 3,
+      manifest,
+      customProgressions: [seeds[0].id],
+    })
+    assert.equal(q2.id, seeds[0].id)
+  }
+
+  // prevQuestionId：不连续重复同题
+  {
+    let prevId = null
+    for (let i = 0; i < 100; i++) {
+      const q = generateProgressionQuestion({ level: 1, manifest, prevQuestionId: prevId })
+      assert.notEqual(q.id, prevId)
+      prevId = q.id
+    }
+  }
+
+  // 统一入口 dispatch
+  {
+    const q = generateQuestion({ type: 'progression', level: 1, manifest })
+    assert.equal(q.type, 'progression')
+    assert.throws(() => generateQuestion({ type: 'progression', level: 1 }),
+      /缺少 manifest/)
+  }
+
+  // 题干中文案形态
+  {
+    const majorQ = generateProgressionQuestion({ level: 1, manifest })
+    assert.ok(/^请听这段大调和弦进行，调性：.+ 大调$/.test(majorQ.promptText), majorQ.promptText)
+    const minorQ = generateProgressionQuestion({ level: 3, manifest })
+    assert.ok(/^请听这段小调和弦进行，调性：.+ 小调$/.test(minorQ.promptText), minorQ.promptText)
+    const modalQ = generateProgressionQuestion({ level: 4, manifest })
+    assert.ok(/^请听这段 Modal 和弦进行，调性：.+$/.test(modalQ.promptText), modalQ.promptText)
   }
 }
 

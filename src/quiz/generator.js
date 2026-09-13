@@ -50,6 +50,10 @@ import {
   stepAlongCircle,
   toFlatName,
   CIRCLE_NOTES_FLAT,
+  getProgressionPoolByLevel,
+  hashProgression,
+  progressionQuestionId,
+  buildProgressionPrompt,
 } from '../music/index.js'
 
 // ============== 通用常量与工具 ==============
@@ -495,16 +499,238 @@ export function generateCircleQuestion({
   }
 }
 
+// ============== 和弦进行题 ==============
+
+/** 进行题干扰项策略标记 */
+export const DISTRACTOR_SWAP = 'swap'
+export const DISTRACTOR_REPLACE = 'replace'
+export const DISTRACTOR_OTHER = 'other'
+
+/** 罗马数字序列选项连接符（展示用，如 `I · V · vi · IV`） */
+export const PROGRESSION_OPTION_SEP = ' · '
+
+/**
+ * 解析错题模式下的进行错题范围（mode+key+tokenHash 三元组集合）。
+ * 支持对象 { mode, key, tokenHash }、题目 id 字符串
+ * `progression:<mode>:<key>:<tokenHash>` 与完整错题记录。
+ * @param {Array<object|string>} customProgressions
+ * @returns {Set<string>} 题目 id 集合
+ */
+function extractProgressionScope(customProgressions) {
+  const ids = new Set()
+  for (const w of customProgressions ?? []) {
+    if (w == null) continue
+    if (typeof w === 'string') {
+      if (w.startsWith('progression:')) ids.add(w)
+      continue
+    }
+    if (w.mode && w.key && w.tokenHash) {
+      ids.add(progressionQuestionId(w))
+    } else {
+      const raw = w.questionId ?? w.id
+      if (typeof raw === 'string' && raw.startsWith('progression:')) ids.add(raw)
+    }
+  }
+  return ids
+}
+
+/**
+ * 策略 1：相邻交换。对 tokens 随机交换一对相邻位置，返回新 token 数组；
+ * 交换后序列与原序列相同（相邻为重复 token）时重试。
+ * @returns {string[]|null}
+ */
+function buildSwapTokens(tokens) {
+  const positions = shuffle(tokens.map((_, i) => i).slice(0, -1))
+  for (const i of positions) {
+    if (tokens[i] === tokens[i + 1]) continue
+    const next = tokens.slice()
+    ;[next[i], next[i + 1]] = [next[i + 1], next[i]]
+    if (hashProgression(next) !== hashProgression(tokens)) return next
+  }
+  return null
+}
+
+/**
+ * 策略 2：token 替换。替换 1-2 个位置为同难度池内其他合法 token，
+ * 优先取另一条进行同位置的 token（保持节奏/和弦复杂度风格）。
+ * @returns {string[]|null}
+ */
+function buildReplaceTokens(tokens, pool, correctHash) {
+  // 同位置可选 token 表（来自池中其他记录），保证替换值合法
+  const byPosition = tokens.map(() => new Set())
+  for (const rec of pool) {
+    rec.progressionTokens.forEach((t, i) => {
+      if (i < byPosition.length && t !== tokens[i]) byPosition[i].add(t)
+    })
+  }
+  const replaceable = byPosition
+    .map((set, i) => ({ i, options: [...set] }))
+    .filter((x) => x.options.length > 0)
+  if (replaceable.length === 0) return null
+
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const next = tokens.slice()
+    const shuffled = shuffle(replaceable)
+    const count = Math.min(shuffled.length, Math.random() < 0.5 ? 1 : 2)
+    for (let k = 0; k < count; k++) {
+      const { i, options } = shuffled[k]
+      next[i] = options[randomInt(options.length)]
+    }
+    if (hashProgression(next) !== correctHash) return next
+  }
+  return null
+}
+
+/**
+ * 生成一道和弦进行识别题。
+ * @param {object} config
+ * @param {number} [config.level=1] 难度等级 1-4
+ * @param {object} config.manifest build-midi-manifest 生成的清单
+ *   { major:[], minor:[], modal:[] }
+ * @param {Array<string|object>} [config.wrongQuestions] 错题记录（错题强化）
+ * @param {Array<object|string>} [config.customProgressions] 错题模式范围
+ *   （mode/key/tokenHash 三元组），非空时只从该范围出题
+ * @param {string|null} [config.prevQuestionId] 上一题 id（避免连续重复）
+ * @returns {object} 题目对象：
+ *   { id, type:'progression', mode, key, tokenHash, style, midiUrl,
+ *     options(4 个序列字符串), correctIndex, promptText, correctAnswer,
+ *     explanation, optionStrategies }
+ */
+export function generateProgressionQuestion({
+  level = 1,
+  manifest,
+  wrongQuestions = [],
+  customProgressions = null,
+  prevQuestionId = null,
+  boostProbability = WRONG_BOOST_PROBABILITY,
+} = {}) {
+  if (!manifest || typeof manifest !== 'object') {
+    throw new Error('generateProgressionQuestion: 缺少 manifest')
+  }
+
+  // 1. 完整难度池（同难度内 mode 唯一、仅 baseline）——干扰项始终取自该池
+  const levelPool = getProgressionPoolByLevel(level, manifest)
+
+  // 2. 错题模式：正确答案限定在错题三元组集合内（干扰项仍取自完整难度池）
+  const scopeIds =
+    Array.isArray(customProgressions) && customProgressions.length > 0
+      ? extractProgressionScope(customProgressions)
+      : null
+  let pickPool = levelPool
+  if (scopeIds && scopeIds.size > 0) {
+    const scoped = levelPool.filter((r) =>
+      scopeIds.has(
+        progressionQuestionId({ mode: r.mode, key: r.key, tokenHash: r.tokenHash })
+      )
+    )
+    if (scoped.length > 0) pickPool = scoped
+  }
+  if (pickPool.length === 0) {
+    throw new Error('generateProgressionQuestion: 当前难度候选池为空')
+  }
+
+  // 3. 候选粒度 progression:<mode>:<key>:<tokenHash>，错题加权抽 1 条
+  const candidates = pickPool.map((r) => ({
+    id: progressionQuestionId(r),
+    record: r,
+  }))
+  const picked = pickWeighted(
+    candidates,
+    wrongQuestions,
+    (item) => item.id,
+    prevQuestionId,
+    scopeIds && scopeIds.size > 0 ? 1 : boostProbability
+  )
+  const rec = picked.record
+  const correctTokens = rec.progressionTokens
+  const correctHash = rec.tokenHash
+  const correctAnswer = correctTokens.join(PROGRESSION_OPTION_SEP)
+
+  // 4. 生成干扰项，按 tokenHash 去重
+  const usedHashes = new Set([correctHash])
+  /** @type {Array<{tokens:string[], strategy:string}>} */
+  const distractorBuilders = []
+
+  const swap = buildSwapTokens(correctTokens)
+  if (swap) distractorBuilders.push({ tokens: swap, strategy: DISTRACTOR_SWAP })
+
+  const replace = buildReplaceTokens(correctTokens, levelPool, correctHash)
+  if (replace) {
+    distractorBuilders.push({ tokens: replace, strategy: DISTRACTOR_REPLACE })
+  }
+
+  // 策略 3：同难度池内 tokenHash 不同的其他进行
+  const otherPool = levelPool.filter(
+    (r) =>
+      r.tokenHash !== correctHash &&
+      // 也排除与前两种干扰序列同 hash 的记录
+      !distractorBuilders.some(
+        (d) => hashProgression(d.tokens) === r.tokenHash
+      )
+  )
+  const shuffledOthers = shuffle(otherPool)
+
+  // 5. 凑齐 3 个两两不同的干扰项（必要时用其他进行兜底）
+  const distractors = []
+  for (const builder of distractorBuilders) {
+    const h = hashProgression(builder.tokens)
+    if (!usedHashes.has(h)) {
+      usedHashes.add(h)
+      distractors.push({
+        text: builder.tokens.join(PROGRESSION_OPTION_SEP),
+        strategy: builder.strategy,
+      })
+    }
+  }
+  for (const other of shuffledOthers) {
+    if (distractors.length >= 3) break
+    if (!usedHashes.has(other.tokenHash)) {
+      usedHashes.add(other.tokenHash)
+      distractors.push({
+        text: other.progressionTokens.join(PROGRESSION_OPTION_SEP),
+        strategy: DISTRACTOR_OTHER,
+      })
+    }
+  }
+  if (distractors.length < 3) {
+    throw new Error('generateProgressionQuestion: 无法生成 3 个合法干扰项')
+  }
+
+  // 6. 4 选项打乱并记录正确位置
+  const correctOption = { text: correctAnswer, strategy: 'correct' }
+  const shuffledOptions = shuffle([correctOption, ...distractors.slice(0, 3)])
+  const options = shuffledOptions.map((o) => o.text)
+  const optionStrategies = shuffledOptions.map((o) => o.strategy)
+  const correctIndex = options.indexOf(correctAnswer)
+
+  return {
+    id: progressionQuestionId(rec),
+    type: 'progression',
+    mode: rec.mode,
+    key: rec.key,
+    tokenHash: rec.tokenHash,
+    style: rec.style,
+    midiUrl: rec.url,
+    options,
+    correctIndex,
+    optionStrategies,
+    promptText: buildProgressionPrompt(rec.mode, rec.key),
+    correctAnswer,
+    explanation: `正确进行：${correctAnswer}`,
+  }
+}
+
 // ============== 统一入口 ==============
 
 /**
  * 统一题目生成入口，按 config.type 分发，便于后续扩展新题型。
- * @param {object} config 必须含 type: 'scale' | 'chord' | 'circle'
+ * @param {object} config 必须含 type: 'scale' | 'chord' | 'circle' | 'progression'
  * @returns {object} 题目对象
  */
 export function generateQuestion(config = {}) {
   if (config.type === 'scale') return generateScaleQuestion(config)
   if (config.type === 'chord') return generateChordQuestion(config)
   if (config.type === 'circle') return generateCircleQuestion(config)
+  if (config.type === 'progression') return generateProgressionQuestion(config)
   throw new Error(`Unknown question type: ${config.type}`)
 }

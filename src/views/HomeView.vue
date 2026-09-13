@@ -144,6 +144,7 @@ import { useRouter } from 'vue-router'
 import { useSettingsStore } from '../stores/settings.js'
 import { useWrongBookStore } from '../stores/wrongbook.js'
 import { SCALE_DIFFICULTIES, CHORD_DIFFICULTIES, CIRCLE_DIFFICULTIES } from '../music/difficulty.js'
+import { PROGRESSION_DIFFICULTIES } from '../music/progression.js'
 
 const router = useRouter()
 const settingsStore = useSettingsStore()
@@ -200,6 +201,15 @@ const CARDS = [
     levelKey: 'circleLevel',
     modeKey: 'circleTrainMode',
   },
+  {
+    type: 'progression',
+    title: '和弦进行识别',
+    tagline: '听辨罗马数字进行',
+    desc: '听一段真实钢琴演奏的和弦进行，选出对应的罗马数字序列',
+    difficulties: PROGRESSION_DIFFICULTIES,
+    levelKey: 'progressionLevel',
+    modeKey: 'progressionTrainMode',
+  },
 ]
 
 /** 卡片展开 / 收起 */
@@ -232,6 +242,7 @@ function selectMode(card, mode) {
 function wrongCountOf(type) {
   if (type === 'scale') return wrongbook.scaleCount
   if (type === 'chord') return wrongbook.chordCount
+  if (type === 'progression') return wrongbook.progressionCount
   return wrongbook.circleCount
 }
 
