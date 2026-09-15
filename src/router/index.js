@@ -12,6 +12,11 @@ const routes = [
     component: () => import('../views/TrainView.vue')
   },
   {
+    path: '/tools/fretboard',
+    name: 'FretboardTool',
+    component: () => import('../views/FretboardView.vue')
+  },
+  {
     path: '/result',
     name: 'Result',
     component: () => import('../views/ResultView.vue')

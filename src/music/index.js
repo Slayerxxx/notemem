@@ -40,6 +40,19 @@ export {
 } from './circle.js'
 
 export {
+  GUITAR_STRINGS,
+  MAX_FRET,
+  GROUP_SIZE,
+  ANY_KEY,
+  getFretPitch,
+  spellFlatNote,
+  getFretNote,
+  getCandidateFrets,
+  generateNoteGroup,
+  toSpokenName,
+} from './fretboard.js'
+
+export {
   PROGRESSION_KEYS,
   MODE_NAMES,
   PROGRESSION_DIFFICULTIES,

@@ -115,6 +115,19 @@
       </section>
     </div>
 
+    <!-- 练习工具栏目（与训练模块分区，独立于出题训练） -->
+    <section class="tools-section">
+      <h2 class="tools-title">练习工具</h2>
+      <div class="tool-card" @click="openFretboardTool">
+        <span class="tool-icon">🎸</span>
+        <div class="tool-info">
+          <h3 class="tool-name">吉他指板记忆</h3>
+          <p class="tool-desc">听语音报音，在指板上找位置</p>
+        </div>
+        <span class="tool-arrow">›</span>
+      </div>
+    </section>
+
     <!-- 底部功能入口 -->
     <nav class="bottom-nav">
       <router-link to="/wrongbook" class="nav-item">
@@ -287,6 +300,11 @@ function startTraining(card) {
   }
   // 错题模式不带题量参数，训练页自行从 wrongbook store 取错题
   router.push({ path: '/train', query })
+}
+
+/** 进入吉他指板记忆工具 */
+function openFretboardTool() {
+  router.push('/tools/fretboard')
 }
 </script>
 
@@ -557,6 +575,79 @@ function startTraining(card) {
   background: var(--border-color);
   box-shadow: none;
   color: var(--text-tertiary);
+}
+
+/* ============== 练习工具栏目 ============== */
+.tools-section {
+  margin-top: 28px;
+}
+
+.tools-title {
+  font-size: var(--font-size-md);
+  font-weight: 800;
+  color: var(--text-color);
+  margin: 0 4px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tools-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.tool-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 16px;
+  cursor: pointer;
+}
+
+.tool-card:active {
+  transform: scale(0.985);
+}
+
+.tool-icon {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: var(--primary-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+}
+
+.tool-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-name {
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.tool-desc {
+  margin-top: 3px;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.tool-arrow {
+  flex-shrink: 0;
+  font-size: 24px;
+  color: var(--text-tertiary);
+  line-height: 1;
 }
 
 /* ============== 底部功能入口 ============== */

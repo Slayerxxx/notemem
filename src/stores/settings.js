@@ -30,6 +30,10 @@ const DEFAULT_SETTINGS = {
   circleTrainMode: 'count',
   /** 和弦进行识别默认训练模式 */
   progressionTrainMode: 'count',
+  /** 吉他指板工具：上次选择的弦（0=⑥弦 … 5=①弦） */
+  fretboardString: 0,
+  /** 吉他指板工具：上次选择的调性（null=不限调） */
+  fretboardKey: null,
   /** 音效开关 */
   soundEnabled: true,
   /** 自定义模式预设（用户保存的配置数组） */
