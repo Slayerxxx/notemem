@@ -110,7 +110,7 @@
             current: phase === 'recite' && beatInGroup === i - 1,
           }"
         >
-          <template v-if="group[i - 1]">{{ group[i - 1].name }}</template>
+          <template v-if="group[i - 1] && i - 1 < revealedCount">{{ group[i - 1].name }}</template>
           <template v-else>?</template>
           <span class="slot-order">{{ i }}</span>
         </div>

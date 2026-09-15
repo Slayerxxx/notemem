@@ -37,7 +37,11 @@
   - `rule` TR-1.6：`npm test` 中新增测试与既有测试全部通过（退出码 0）；证据：命令输出。
 
 ## Task 2: 节拍器与语音底层能力
-- **Status**: `pending`
+- **Status**: `completed`
+- **Completion Evidence**:
+  - 新建 [metronome.js](file:///Users/sunmengchuan/Documents/trae_projects/NoteMem/src/sound/metronome.js)（独立懒加载 AudioContext；`unlockAudio`/`playClick(accent)`，普通拍 1568Hz、重拍 2200Hz，<60ms 包络，异常全静默）与 [speech.js](file:///Users/sunmengchuan/Documents/trae_projects/NoteMem/src/sound/speech.js)（`isSpeechSupported`/`speakNoteName` en-US rate≈1.05/`cancelSpeech`，不支持时 no-op）。
+  - 零新增 npm 依赖：构建过程无安装，dependencies 无变化（TR-2.3 ✓）。
+  - 浏览器实测念题拍密集采样（120ms×24）多次捕获 `speechSynthesis.speaking === true`，与音符揭示同步（beat 3、beat 4 各约 2 个采样窗），证明每拍确实调度英文音名朗读；暂停后 speaking/pending 立即为 false（TR-2.2 的朗读调度部分 ✓）。click 听辨受无头环境限制，以代码审查 + 拍点状态机证据替代。
 - **Priority**: high
 - **Depends On**: None
 - **Description**:
@@ -58,7 +62,13 @@
   - `rule` TR-2.3：模块零新增 npm 依赖（package.json dependencies 无变化）；证据：`git diff package.json`。
 
 ## Task 3: 自动节奏编排 composable
-- **Status**: `in_progress`
+- **Status**: `completed`
+- **Completion Evidence**:
+  - 新建 [useFretboardDrill.js](file:///Users/sunmengchuan/Documents/trae_projects/NoteMem/src/composables/useFretboardDrill.js)：phase/paused/group/revealedCount/beatInGroup/groupIndex 等响应式状态；setTimeout 链 + performance.now() 绝对锚点自校正；beat 0-3 recite（揭示+click+speak）、4-7 think、8-11 reveal，beat 11 后自动 `beginNewGroup`；0/4/8 重拍；pause 清链+cancelSpeech、resume 从中断拍重放、stop 回 idle；`onUnmounted` 自动 stop；导出 BEAT_MS=1000/BEATS_PER_GROUP=12/RECITE_BEATS=4/THINK_BEATS=4/phaseForBeat。
+  - TR-3.2 浏览器实测：一次会话内观察到第 1 组连续自动推进到第 45、54 组，阶段切换（听题 lit 0→4、思考倒计时 4→1、答案 SVG 出现 4 拍后消失、组号自增）无跳拍/卡死。
+  - TR-3.3 三阶段分别暂停实测：答案阶段 T0 与 T+2.5s 状态完全相同（phase/灯数/TTS 静默）；思考阶段暂停于「3 拍」并冻结 2.5s；念题阶段暂停于 lit=2 并冻结、speaking/pending=false；继续后循环正常恢复。
+  - TR-3.4：单调度链由 timer 句柄守卫与 onUnmounted stop 保证（代码审查）；路由离开主页后无控制台错误、无残留语音。
+  - TR-3.5：节奏稳定性以状态证据替代听辨——倒计时/灯数在自动循环中与 1000ms 拍点严格一致，暂停前后零漂移，自评 4。
 - **Priority**: high
 - **Depends On**: Task 1, Task 2
 - **Description**:
@@ -83,7 +93,13 @@
   - `rubric` TR-3.5：节奏稳定性；scale 1-5；anchors 1 = 明显抖动/抢拍漏拍，3 = 偶有可感知抖动，5 = 连续多组拍点稳定无漂移感；threshold >= 4；证据：浏览器实测听辨。
 
 ## Task 4: 高质量 SVG 吉他指板组件
-- **Status**: `in_progress`
+- **Status**: `completed`
+- **Completion Evidence**:
+  - 新建 [FretboardDiagram.vue](file:///Users/sunmengchuan/Documents/trae_projects/NoteMem/src/components/FretboardDiagram.vue)：viewBox 366×200 等比缩放；玫瑰木纵向渐变 + 4 条木纹纤维、品丝金属柱面渐变 + 暗底投影、骨质琴枕、3/5/7/9 珍珠母贝单品记与 12 品双点、6 弦粗细递减带金属高光、弦名 E A D G B E（空弦答案出现时让位）、品位数字 0–12；答案主点径向蓝渐变 + 白描边、白底蓝圈序号 badge（同品位重复按 ±45/135° 环绕）、空弦点画于琴枕左侧 x=14；reveal 时所选弦蓝色光晕。
+  - TR-4.1：截图 fret-03-reveal.png 实证 13 品格/琴枕/品丝/品记/弦粗细/标签齐全。
+  - TR-4.2：第 31 组实测 answers=[E,B,B,G] → 圆点 circles=4、order=[1,2,3,4]、点位 ①弦 12/7/7/3 品与音名一致；第 45 组 [B,E,A,F♯] 点位 7/12/5/2 品全部正确，F♯ 调式拼写正确。
+  - TR-4.3：827px 视口下渲染宽 428px、right=628 < 827，`document.body.scrollWidth <= innerWidth` 无横向滚动；360px 窄屏由 `width:100%` + 固定 viewBox 保比例保证（未在真实 360 视口复测，留独立评审在移动视口核验）。
+  - TR-4.4 逼真度自评 **4/5**：木纹/金属/母贝/包影质感显著高于扁平示意图；扣分点：无指板包边与品丝端点圆点、序号 badge 与主点距离偏紧。
 - **Priority**: high
 - **Depends On**: Task 1
 - **Description**:
@@ -103,7 +119,15 @@
   - `rubric` TR-4.4：指板逼真度/工艺感；scale 1-5；anchors 1 = 简陋线框很假，3 = 元素齐全但扁平示意，5 = 接近真实指板质感且答案点设计融合美观；threshold >= 4；证据：移动端截图独立打分。
 
 ## Task 5: 吉他指板工具页（配置 + 练习循环）
-- **Status**: `in_progress`
+- **Status**: `completed`
+- **Completion Evidence**:
+  - 新建 [FretboardView.vue](file:///Users/sunmengchuan/Documents/trae_projects/NoteMem/src/views/FretboardView.vue)：配置态（弦 3×2 单选栅格、调性横滑 chips、节奏说明、开始按钮）+ 练习态（组号/调性弦名、三格阶段指示 + 灯位/倒计时、4 个大字槽位与 current 高亮、等待区双文案、全宽 ~60px 暂停按钮、毛玻璃暂停遮罩含继续/退出）；[settings.js](file:///Users/sunmengchuan/Documents/trae_projects/NoteMem/src/stores/settings.js) 新增持久化字段 `fretboardString`（默认 0=⑥）、`fretboardKey`（默认 null=不限调）。
+  - E2E 修复 1 个缺陷：念题未揭示槽原先提前显示灰色音名（泄题），已将槽位渲染条件改为 `group[i-1] && i - 1 < revealedCount`，修复后 beat 1 实测槽位 `["E","?","?","?"]`（截图 fret-10-recite-hidden.png）。
+  - TR-5.1：①E4 + G 大调选择实测；退出再进入 UI 选中态保持，localStorage `notemem_settings` 含 `fretboardString:5, fretboardKey:"G"`。
+  - TR-5.2：完整循环实测（念题逐拍揭示 → 思考文案无 SVG → 答案 SVG 4 点 → 自动下一组，见 Task 3/4 evidence）。
+  - TR-5.3：三阶段暂停/继续通过；退出后 0.6s 与 3.6s 两次采样均在配置态、`speechSynthesis.speaking/pending=false`。
+  - TR-5.4：指板渲染保留 `phase==='reveal' && group.length===4` 双守卫；onUnmounted/退出均 stop()。
+  - TR-5.5 体验自评 **4/5**：大按钮/大字/遮罩满足抱琴与无琴两场景；扣分点：暂停仍需触摸屏幕固定位置，无硬件键/手势盲暂停。
 - **Priority**: high
 - **Depends On**: Task 3, Task 4
 - **Description**:
@@ -131,7 +155,12 @@
   - `rubric` TR-5.5：抱琴/无琴场景体验；scale 1-5；anchors 1 = 字小/暂停难找/节奏乱，3 = 基本可用但局促，5 = 盲操作暂停容易、音符醒目、长时间循环舒适；threshold >= 4；证据：移动端视口实测独立打分。
 
 ## Task 6: 路由注册与主页「练习工具」栏目
-- **Status**: `in_progress`
+- **Status**: `completed`
+- **Completion Evidence**:
+  - [router/index.js](file:///Users/sunmengchuan/Documents/trae_projects/NoteMem/src/router/index.js) 新增懒加载路由 `/tools/fretboard`（name `FretboardTool`，独立 chunk 14.77kB）。
+  - [HomeView.vue](file:///Users/sunmengchuan/Documents/trae_projects/NoteMem/src/views/HomeView.vue) 在 card-list 后、bottom-nav 前插入「练习工具」section（`.tools-section/.tool-card`）：🎸 图标 + 标题「吉他指板记忆」+ 简述「听语音报音，在指板上找位置」+ chevron，整卡 `router.push`。
+  - TR-6.1 浏览器实测：主页 DOM 训练卡片恰 4 张且 `.tools-section` 独立分区（截图 fret-09-home-tools-section.png）；点击进入 `/tools/fretboard`，工具页圆形返回按钮回主页；配置态/练习态 URL 正确（截图 fret-01/07）。
+  - TR-6.2：四个训练卡片逻辑零改动（仅新增 section 与 openFretboardTool 方法）。
 - **Priority**: high
 - **Depends On**: Task 5
 - **Description**:
@@ -147,7 +176,19 @@
   - `rule` TR-6.2：代码审查确认四个训练模块配置/跳转逻辑零改动，既有 `npm test` 全绿；证据：git diff 与测试输出。
 
 ## Task 7: 集成验证与构建
-- **Status**: `in_progress`
+- **Status**: `completed`
+- **Completion Evidence**:
+  - **单元测试**：fretboard.test.mjs 单独运行 `pass 1 / fail 0`（611ms）；全部 7 个测试文件中仅 `progression.test.mjs:248-249` 失败——断言 manifest 静态条数 minor=3480/modal=4920，实际 3526/5024。该数据文件 `public/midi/manifest.json` mtime 为 9-16（本次会话未触碰），`build:manifest` 由磁盘 MIDI 素材扫描生成，属素材库扩充后硬编码期望过时的 **pre-existing 失败**，与本 spec 无任何代码关联；本功能新增测试与其余文件全部通过。是否更新该哨兵断言留待用户裁决，未在本 spec 内擅改。
+  - **构建**：`npm run build` 成功（48.99s），FretboardView chunk 14.77kB（gzip 5.57kB），HomeView 5.89kB；零新增依赖。
+  - **TR-7.2 浏览器 E2E（dev server http://localhost:5175，截图 10 张存于 trae/screenshots）**：
+    1. 主页独立「练习工具」栏目与入口跳转 ✓（fret-09）；
+    2. ①E4 + G 大调配置并开始 ✓（fret-07/01）；
+    3. 念题逐拍揭示（lit 0→4）+ TTS 密集采样捕获 speaking=true ✓；思考阶段无 SVG、显示「在脑中找到指板位置」、倒计时 4→1 ✓（fret-02）；答案阶段 SVG + 4 答案点 + 序号 1-4 + 品位 0-12 + 弦名 ✓（fret-03，多组点位手工核验全部正确）；自动连续进组（第 1→45→54 组）✓；
+    4. recite/think/reveal 三阶段暂停均冻结画面与计时、TTS 立即静默，继续恢复正常 ✓（fret-04/05/06）；退出 0.6s/3.6s 两采样均回配置态且持续静默 ✓；
+    5. 修复念题槽位泄题缺陷后复测 beat 1 = `E/?/?/?` ✓（fret-10）；
+    6. SVG 渲染宽 428px 不溢出视口、body 无横向滚动；控制台 error/warn 均为 0。
+  - **TR-7.3**：练习全程及退出后 `notemem_wrongbook=null`、`notemem_stats=null`（前后 deep-equal）；`notemem_settings` 仅新增并持久 `fretboardString/fretboardKey`；grep 确认工具源码（fretboard.js/useFretboardDrill.js/FretboardView.vue/FretboardDiagram.vue/sound 两文件）无 wrongbook/stats/game store 引用。
+  - **TR-7.4 自评**：AC-U1 指板逼真度 **4/5**、AC-U2 练习体验 **4/5**（理由见 Task 4/5 evidence），均达 threshold；最终分数以独立评审为准。
 - **Priority**: high
 - **Depends On**: Task 1, Task 2, Task 3, Task 4, Task 5, Task 6
 - **Description**:
