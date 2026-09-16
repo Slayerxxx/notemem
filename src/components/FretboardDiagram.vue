@@ -266,9 +266,9 @@ const BOARD_TOP = 26
 const STRING_FIRST_Y = 41
 const STRING_SPACING = 22
 
-/** 弦索引 → 纵向坐标 */
+/** 弦索引 → 纵向坐标（⑥弦在底部，①弦在顶部，符合从下到上 E A D G B E 的习惯） */
 function stringY(i) {
-  return STRING_FIRST_Y + i * STRING_SPACING
+  return STRING_FIRST_Y + (5 - i) * STRING_SPACING
 }
 
 /** 琴弦粗细：⑥ 最粗 → ① 最细 */
