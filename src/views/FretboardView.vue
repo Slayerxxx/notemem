@@ -124,6 +124,7 @@
           :reveal="phase === 'reveal'"
           :interactive="phase === 'recite' || phase === 'think'"
           :user-answers="userAnswers"
+          :key-name="drill.selectedKey.value"
           @select="answerFret"
         />
       </div>
@@ -156,6 +157,7 @@
 import { ref, computed } from 'vue'
 import { useSettingsStore } from '../stores/settings.js'
 import { GUITAR_STRINGS, MAJOR_KEYS } from '../music/index.js'
+import { getFretNote } from '../music/fretboard.js'
 import { useFretboardDrill } from '../composables/useFretboardDrill.js'
 import FretboardDiagram from '../components/FretboardDiagram.vue'
 
@@ -193,11 +195,14 @@ const thinkRemaining = computed(() => 8 - beatInGroup.value)
 /** 答案阶段剩余拍数（beat 8-11 → 4-1） */
 const revealRemaining = computed(() => 12 - beatInGroup.value)
 
-/** 用户答对的个数（仅统计已作答的位置） */
+/** 用户答对的个数（按音名判断：空弦与12品同音名都算正确） */
 const correctCount = computed(() => {
+  const str = drill.selectedString.value
+  const key = drill.selectedKey.value
   let count = 0
   for (let i = 0; i < userAnswers.value.length && i < group.value.length; i += 1) {
-    if (userAnswers.value[i] === group.value[i].fret) count += 1
+    const userNote = getFretNote(str, userAnswers.value[i], key)
+    if (userNote === group.value[i].name) count += 1
   }
   return count
 })
