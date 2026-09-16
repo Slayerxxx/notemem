@@ -221,7 +221,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { GUITAR_STRINGS } from '../music/fretboard.js'
+import { GUITAR_STRINGS, getFretNote, ANY_KEY } from '../music/fretboard.js'
 
 const props = defineProps({
   /** 当前练习弦索引 0=⑥ … 5=① */
@@ -248,6 +248,11 @@ const props = defineProps({
   userAnswers: {
     type: Array,
     default: () => [],
+  },
+  /** 调性（用于音名拼写判断正误；空弦与 12 品同音名视为都正确） */
+  keyName: {
+    type: [String, null],
+    default: ANY_KEY,
   },
 })
 
@@ -311,6 +316,7 @@ function labelHiddenByAnswer(stringIndex) {
 
 /**
  * 答案标注：根据用户作答情况标记正确/错误/未作答。
+ * 正确性按音名判断：空弦(0品)与12品为同音名（差八度），点击任一处均判正确。
  * 组内品位互不相同，序号 badge 固定置于右上角。
  */
 const answerMarkers = computed(() => {
@@ -320,7 +326,8 @@ const answerMarkers = computed(() => {
     let status = 'none'
     if (hasUserAnswer) {
       if (i < props.userAnswers.length) {
-        status = props.userAnswers[i] === a.fret ? 'correct' : 'wrong'
+        const userNote = getFretNote(props.selectedString, props.userAnswers[i], props.keyName)
+        status = userNote === a.name ? 'correct' : 'wrong'
       } else {
         status = 'na'
       }
@@ -351,16 +358,18 @@ const answerMarkers = computed(() => {
 /**
  * 用户作答标记：
  * - 念题/思考阶段：显示所有已点击位置（橙色，带序号）
- * - 答案阶段：仅显示错误点击的位置（红色轮廓），正确位置已由绿色答案点覆盖
+ * - 答案阶段：仅显示错误点击的位置，正确点击（含同音名的0品/12品）由绿色答案点覆盖
  */
 const userClickMarkers = computed(() => {
   return props.userAnswers
     .map((fret, i) => ({ fret, order: i + 1 }))
     .filter((m) => {
       if (!props.reveal) return true
-      // 答案阶段：仅保留错误点击（正确点击的位置已有绿色答案点）
-      const correct = props.answers[m.order - 1]?.fret
-      return correct === undefined || m.fret !== correct
+      // 答案阶段：仅保留错误点击（按音名判断正确的不显示）
+      const correctAnswer = props.answers[m.order - 1]
+      if (!correctAnswer) return true
+      const userNote = getFretNote(props.selectedString, m.fret, props.keyName)
+      return userNote !== correctAnswer.name
     })
     .map((m) => ({
       order: m.order,
