@@ -162,9 +162,25 @@ import { getMajorScale, MAJOR_KEYS } from '../scales.js'
     }
   }
 
-  // 允许重复：12 品内候选只有 7-8 个，4 抽允许重名（仅做结构存在性断言）
-  const group = generateNoteGroup(0, 'C', () => 0) // 恒取下标 0
+  // 不允许重复品位：每组 4 个品位必须互不相同
+  for (const s of GUITAR_STRINGS) {
+    for (const key of keyOptions) {
+      for (let round = 0; round < 100; round += 1) {
+        const g = generateNoteGroup(s.index, key, seededRng(round * 31 + 7))
+        const frets = g.map((x) => x.fret)
+        assert.equal(
+          new Set(frets).size,
+          frets.length,
+          `${s.number} 弦 ${key ?? '不限调'} 组内品位不应重复：${frets.join(',')}`
+        )
+      }
+    }
+  }
+
+  // 恒取下标 0 的 rng 不再产出重复品位：洗牌后前 4 个互不相同
+  const group = generateNoteGroup(0, 'C', () => 0)
   assert.equal(group.length, 4)
+  assert.equal(new Set(group.map((x) => x.fret)).size, 4)
 }
 
 // ============== 5. TTS 英文朗读文本映射（TR-1.5） ==============

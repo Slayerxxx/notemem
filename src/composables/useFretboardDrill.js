@@ -14,7 +14,7 @@
  */
 
 import { ref, onUnmounted } from 'vue'
-import { generateNoteGroup } from '../music/fretboard.js'
+import { generateNoteGroup, GROUP_SIZE } from '../music/fretboard.js'
 import { playClick, unlockAudio } from '../sound/metronome.js'
 import { speakNoteName, cancelSpeech } from '../sound/speech.js'
 
@@ -49,10 +49,12 @@ export function phaseForBeat(beat) {
  *   selectedString: import('vue').Ref<number>,
  *   selectedKey: import('vue').Ref<string|null>,
  *   flashTick: import('vue').Ref<number>,
+ *   userAnswers: import('vue').Ref<number[]>,
  *   start: (stringIndex:number, keyName:string|null) => void,
  *   pause: () => void,
  *   resume: () => void,
  *   stop: () => void,
+ *   answerFret: (fret:number) => void,
  * }}
  */
 export function useFretboardDrill() {
@@ -61,6 +63,8 @@ export function useFretboardDrill() {
   const paused = ref(false)
   /** 当前组 4 个音符 */
   const group = ref([])
+  /** 用户在指板上的作答（按序点击的品位数组，长度 0-4） */
+  const userAnswers = ref([])
   /** 念题阶段已揭示个数 0-4 */
   const revealedCount = ref(0)
   /** 组内当前拍 0-11 */
@@ -132,6 +136,7 @@ export function useFretboardDrill() {
   function beginNewGroup() {
     group.value = generateNoteGroup(selectedString.value, selectedKey.value)
     revealedCount.value = 0
+    userAnswers.value = []
     beatInGroup.value = 0
     groupIndex.value += 1
     // 新组重新锚定时间网格（组间无间隔连续）
@@ -154,6 +159,7 @@ export function useFretboardDrill() {
     selectedKey.value = keyName
     group.value = generateNoteGroup(stringIndex, keyName)
     revealedCount.value = 0
+    userAnswers.value = []
     beatInGroup.value = 0
     groupIndex.value = 1
     paused.value = false
@@ -189,6 +195,18 @@ export function useFretboardDrill() {
     scheduleNext()
   }
 
+  /**
+   * 用户在指板上点击作答：按序记录品位。
+   * 仅在念题/思考阶段可作答；答案阶段锁定，满 4 个后忽略。
+   * @param {number} fret 0-12
+   */
+  function answerFret(fret) {
+    if (!running || paused.value) return
+    if (phase.value === 'reveal' || phase.value === 'idle') return
+    if (userAnswers.value.length >= GROUP_SIZE) return
+    userAnswers.value = [...userAnswers.value, fret]
+  }
+
   /** 结束练习：彻底清理，回到 idle 配置态 */
   function stop() {
     running = false
@@ -198,6 +216,7 @@ export function useFretboardDrill() {
     phase.value = 'idle'
     beatInGroup.value = 0
     revealedCount.value = 0
+    userAnswers.value = []
     group.value = []
     groupIndex.value = 0
   }
@@ -217,9 +236,11 @@ export function useFretboardDrill() {
     selectedString,
     selectedKey,
     flashTick,
+    userAnswers,
     start,
     pause,
     resume,
     stop,
+    answerFret,
   }
 }
