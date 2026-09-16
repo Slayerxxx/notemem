@@ -188,15 +188,30 @@ export function generateNoteGroup(
 }
 
 /**
- * 字母音名 → 英文 TTS 朗读文本。
+ * 字母音名 → 英文 TTS 朗读文本（音标拼写，跨浏览器一致）。
+ *
+ * 注意：不能把单个大写字母直接交给 speechSynthesis，否则 iOS Safari 等
+ * 引擎会把它当成缩写读出 "Capital A"，而 Chrome 读 "ay"。
+ * 用音标拼写（A→ay、B→bee…）保证所有浏览器读出相同的字母名。
  * 升号后缀读作 sharp，降号后缀读作 flat。
- * 示例：C → "C"；F♯ → "F sharp"；B♭ → "B flat"；E♯ → "E sharp"。
+ * 示例：C → "see"；F♯ → "ef sharp"；B♭ → "bee flat"；E♯ → "ee sharp"。
  * @param {string} noteName
  * @returns {string}
  */
+const LETTER_PHONETIC = {
+  A: 'ay',
+  B: 'bee',
+  C: 'see',
+  D: 'dee',
+  E: 'ee',
+  F: 'ef',
+  G: 'gee',
+}
+
 export function toSpokenName(noteName) {
-  const letter = String(noteName).charAt(0)
-  if (String(noteName).includes(SHARP)) return `${letter} sharp`
-  if (String(noteName).includes(FLAT)) return `${letter} flat`
-  return letter
+  const letter = String(noteName).charAt(0).toUpperCase()
+  const spoken = LETTER_PHONETIC[letter] ?? letter
+  if (String(noteName).includes(SHARP)) return `${spoken} sharp`
+  if (String(noteName).includes(FLAT)) return `${spoken} flat`
+  return spoken
 }

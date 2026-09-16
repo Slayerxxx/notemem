@@ -185,18 +185,21 @@ import { getMajorScale, MAJOR_KEYS } from '../scales.js'
 
 // ============== 5. TTS 英文朗读文本映射（TR-1.5） ==============
 {
-  assert.equal(toSpokenName('C'), 'C')
-  assert.equal(toSpokenName('D'), 'D')
-  assert.equal(toSpokenName('E'), 'E')
-  assert.equal(toSpokenName('F'), 'F')
-  assert.equal(toSpokenName('G'), 'G')
-  assert.equal(toSpokenName('A'), 'A')
-  assert.equal(toSpokenName('B'), 'B')
-  assert.equal(toSpokenName('F♯'), 'F sharp')
-  assert.equal(toSpokenName('E♯'), 'E sharp')
-  assert.equal(toSpokenName('B♭'), 'B flat')
-  assert.equal(toSpokenName('G♭'), 'G flat')
-  assert.equal(toSpokenName('D♭'), 'D flat')
+  // 字母用音标拼写，避免 iOS Safari 把孤立大写字母读成 "Capital A"
+  assert.equal(toSpokenName('C'), 'see')
+  assert.equal(toSpokenName('D'), 'dee')
+  assert.equal(toSpokenName('E'), 'ee')
+  assert.equal(toSpokenName('F'), 'ef')
+  assert.equal(toSpokenName('G'), 'gee')
+  assert.equal(toSpokenName('A'), 'ay')
+  assert.equal(toSpokenName('B'), 'bee')
+  assert.equal(toSpokenName('F♯'), 'ef sharp')
+  assert.equal(toSpokenName('E♯'), 'ee sharp')
+  assert.equal(toSpokenName('B♭'), 'bee flat')
+  assert.equal(toSpokenName('G♭'), 'gee flat')
+  assert.equal(toSpokenName('D♭'), 'dee flat')
+  // 小写字母也应归一化（防御性）
+  assert.equal(toSpokenName('a'), 'ay')
 }
 
 console.log('fretboard.test.mjs OK')
