@@ -158,8 +158,9 @@ export function getCandidateFrets(stringIndex, keyName = ANY_KEY) {
 }
 
 /**
- * 生成一组随机音符：从候选品位中有放回独立抽取 GROUP_SIZE 个。
- * 允许音名重复（含空弦与 12 品同音名）；答案以实际抽中品位为准，无歧义。
+ * 生成一组随机音符：从候选品位中无放回抽取 GROUP_SIZE 个。
+ * 组内品位互不相同（保证 4 个答案对应指板上 4 个不同位置）；
+ * 音名仍可能因八度重复（如空弦与 12 品同音名），答案以实际抽中品位为准。
  * @param {number} stringIndex 0-5
  * @param {string|null} [keyName] 大调名；null 表示不限调
  * @param {() => number} [rng] 可注入随机源（[0,1)），默认 Math.random
@@ -171,10 +172,16 @@ export function generateNoteGroup(
   rng = Math.random
 ) {
   const candidates = getCandidateFrets(stringIndex, keyName)
+  // Fisher–Yates 洗牌取前 GROUP_SIZE 个，实现无放回抽样
+  const pool = candidates.slice()
+  const n = Math.min(GROUP_SIZE, pool.length)
+  for (let i = 0; i < n; i += 1) {
+    const j = i + Math.floor(rng() * (pool.length - i))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
   const group = []
-  for (let i = 0; i < GROUP_SIZE; i += 1) {
-    const idx = Math.floor(rng() * candidates.length)
-    const fret = candidates[idx]
+  for (let i = 0; i < n; i += 1) {
+    const fret = pool[i]
     group.push({ fret, name: getFretNote(stringIndex, fret, keyName) })
   }
   return group

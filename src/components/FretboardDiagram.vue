@@ -46,11 +46,29 @@
           <stop offset="55%" stop-color="#efe9d8" />
           <stop offset="100%" stop-color="#c9c0a8" />
         </radialGradient>
-        <!-- 答案点 -->
+        <!-- 答案点（默认蓝） -->
         <radialGradient id="fb-answer" cx="0.35" cy="0.3" r="0.85">
           <stop offset="0%" stop-color="#7ea0ff" />
           <stop offset="55%" stop-color="#4f7cff" />
           <stop offset="100%" stop-color="#3a5fd6" />
+        </radialGradient>
+        <!-- 正确（绿） -->
+        <radialGradient id="fb-correct" cx="0.35" cy="0.3" r="0.85">
+          <stop offset="0%" stop-color="#6ee7a0" />
+          <stop offset="55%" stop-color="#34c759" />
+          <stop offset="100%" stop-color="#248a3d" />
+        </radialGradient>
+        <!-- 错误（红） -->
+        <radialGradient id="fb-wrong" cx="0.35" cy="0.3" r="0.85">
+          <stop offset="0%" stop-color="#ff8a8c" />
+          <stop offset="55%" stop-color="#ff4d4f" />
+          <stop offset="100%" stop-color="#c93436" />
+        </radialGradient>
+        <!-- 用户作答点（橙） -->
+        <radialGradient id="fb-user" cx="0.35" cy="0.3" r="0.85">
+          <stop offset="0%" stop-color="#ffc070" />
+          <stop offset="55%" stop-color="#ff9500" />
+          <stop offset="100%" stop-color="#c47000" />
         </radialGradient>
       </defs>
 
@@ -101,9 +119,8 @@
 
       <!-- 琴弦（在琴枕之上） -->
       <g>
-        <!-- 选中弦的高亮光晕（仅 reveal） -->
+        <!-- 选中弦的高亮光晕 -->
         <line
-          v-if="reveal"
           :x1="6"
           :y1="stringY(selectedString)"
           x2="361"
@@ -126,10 +143,10 @@
         />
       </g>
 
-      <!-- 弦名标签（该弦空弦答案出现时让位给答案点） -->
+      <!-- 弦名标签 -->
       <g v-for="(s, i) in GUITAR_STRINGS" :key="'label-' + s.number">
         <text
-          v-if="!reveal || !openStringOnSelected(i)"
+          v-if="!labelHiddenByAnswer(i)"
           :x="14"
           :y="stringY(i) + 3.5"
           text-anchor="middle"
@@ -137,26 +154,55 @@
         >{{ s.openName }}</text>
       </g>
 
-      <!-- 答案层 -->
+      <!-- 用户作答标记（念题/思考阶段：显示所有点击；答案阶段：仅显示错误点击的位置） -->
+      <g>
+        <template v-for="(m, i) in userClickMarkers" :key="'user-' + i">
+          <circle :cx="m.x" :cy="m.y" r="11" fill="url(#fb-user)" stroke="#ffffff" stroke-width="1.4" />
+          <text
+            :x="m.x"
+            :y="m.y + 3.6"
+            text-anchor="middle"
+            class="fb-user-order"
+          >{{ m.order }}</text>
+        </template>
+      </g>
+
+      <!-- 答案层（仅 reveal 阶段） -->
       <g v-if="reveal">
-        <template v-for="(m, i) in markers" :key="'answer-' + i">
+        <template v-for="(m, i) in answerMarkers" :key="'answer-' + i">
           <!-- 音名主点 -->
-          <circle :cx="m.x" :cy="m.y" r="11.5" fill="url(#fb-answer)" stroke="#ffffff" stroke-width="1.4" />
+          <circle :cx="m.x" :cy="m.y" r="11.5" :fill="m.fill" stroke="#ffffff" stroke-width="1.4" />
           <text
             :x="m.x"
             :y="m.y + 3.6"
             text-anchor="middle"
             class="fb-answer-name"
           >{{ m.name }}</text>
-          <!-- 序号 badge（同品位重复时环绕分布） -->
-          <circle :cx="m.badgeX" :cy="m.badgeY" r="6.6" fill="#ffffff" stroke="#4f7cff" stroke-width="1.4" />
+          <!-- 序号 badge -->
+          <circle :cx="m.badgeX" :cy="m.badgeY" r="6.6" fill="#ffffff" :stroke="m.badgeStroke" stroke-width="1.4" />
           <text
             :x="m.badgeX"
             :y="m.badgeY + 2.8"
             text-anchor="middle"
             class="fb-answer-order"
+            :fill="m.badgeStroke"
           >{{ m.order }}</text>
         </template>
+      </g>
+
+      <!-- 可点击区域（仅 interactive 时渲染，透明覆盖在选中弦的每个品位上） -->
+      <g v-if="interactive" class="fb-click-layer">
+        <rect
+          v-for="f in 13"
+          :key="'click-' + (f - 1)"
+          :x="fretClickRect(f - 1).x"
+          :y="fretClickRect(f - 1).y"
+          :width="fretClickRect(f - 1).w"
+          :height="fretClickRect(f - 1).h"
+          fill="transparent"
+          class="fb-click-target"
+          @click="handleClick(f - 1)"
+        />
       </g>
 
       <!-- 品位数字 -->
@@ -193,7 +239,19 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  /** 是否可交互点击（念题/思考阶段为 true，答案阶段为 false） */
+  interactive: {
+    type: Boolean,
+    default: false,
+  },
+  /** 用户按序点击的品位数组 */
+  userAnswers: {
+    type: Array,
+    default: () => [],
+  },
 })
+
+const emit = defineEmits(['select'])
 
 // ============== 几何常量（viewBox 366 × 200） ==============
 const NUT_X = 28
@@ -215,7 +273,7 @@ function stringWidth(i) {
 
 /** 品丝 x（f = 1-12） */
 function fretWireX(f) {
-  return NUT_X + NUT_W + f * FRET_W - FRET_W + FRET_W // 34 + f*27 - 27 + 27 ≡ 34 + f*27
+  return NUT_X + NUT_W + f * FRET_W - FRET_W + FRET_W // 34 + f*27
 }
 
 /** 品格中点 x（f = 1-12）；f = 0 为空弦区 */
@@ -229,36 +287,92 @@ function markerX(fret) {
   return fret === 0 ? 14 : fretCenterX(fret)
 }
 
-/** 该弦空弦位置在 reveal 时是否被答案占用 */
-function openStringOnSelected(stringIndex) {
+/**
+ * 可点击区域几何：覆盖选中弦上每个品位的矩形。
+ * @param {number} fret 0-12
+ */
+function fretClickRect(fret) {
+  const y = stringY(props.selectedString)
+  const halfH = 12
+  if (fret === 0) {
+    // 空弦区：琴枕左侧
+    return { x: 6, y: y - halfH, w: 22, h: halfH * 2 }
+  }
+  const x1 = fretWireX(fret - 1)
+  const x2 = fretWireX(fret)
+  return { x: x1, y: y - halfH, w: x2 - x1, h: halfH * 2 }
+}
+
+/** 该弦空弦位置是否被答案占用（避免弦名与答案点重叠） */
+function labelHiddenByAnswer(stringIndex) {
   if (stringIndex !== props.selectedString) return false
   return props.answers.some((a) => a.fret === 0)
 }
 
 /**
- * 答案标注：同品位重复出现时，序号 badge 沿右上/右下/左下/左上周绕，
- * 保证 4 次同品位也互不遮挡；主点位置始终精确落在品位中心。
+ * 答案标注：根据用户作答情况标记正确/错误/未作答。
+ * 组内品位互不相同，序号 badge 固定置于右上角。
  */
-const markers = computed(() => {
-  const seen = new Map()
-  // badge 环绕角（度）：右上 → 右下 → 左下 → 左上
-  const angles = [-45, 45, 135, -135]
+const answerMarkers = computed(() => {
+  if (!props.reveal) return []
+  const hasUserAnswer = props.userAnswers.length > 0
   return props.answers.map((a, i) => {
-    const count = seen.get(a.fret) ?? 0
-    seen.set(a.fret, count + 1)
+    let status = 'none'
+    if (hasUserAnswer) {
+      if (i < props.userAnswers.length) {
+        status = props.userAnswers[i] === a.fret ? 'correct' : 'wrong'
+      } else {
+        status = 'na'
+      }
+    }
+    const fill =
+      status === 'correct' ? 'url(#fb-correct)' :
+      status === 'wrong' ? 'url(#fb-wrong)' :
+      'url(#fb-answer)'
+    const badgeStroke =
+      status === 'correct' ? '#34c759' :
+      status === 'wrong' ? '#ff4d4f' :
+      '#4f7cff'
     const x = markerX(a.fret)
     const y = stringY(props.selectedString)
-    const rad = (angles[count % 4] * Math.PI) / 180
     return {
       name: a.name,
       order: i + 1,
       x,
       y,
-      badgeX: x + Math.cos(rad) * 13.6,
-      badgeY: y + Math.sin(rad) * 13.6,
+      fill,
+      badgeStroke,
+      badgeX: x + 10.5,
+      badgeY: y - 10.5,
     }
   })
 })
+
+/**
+ * 用户作答标记：
+ * - 念题/思考阶段：显示所有已点击位置（橙色，带序号）
+ * - 答案阶段：仅显示错误点击的位置（红色轮廓），正确位置已由绿色答案点覆盖
+ */
+const userClickMarkers = computed(() => {
+  return props.userAnswers
+    .map((fret, i) => ({ fret, order: i + 1 }))
+    .filter((m) => {
+      if (!props.reveal) return true
+      // 答案阶段：仅保留错误点击（正确点击的位置已有绿色答案点）
+      const correct = props.answers[m.order - 1]?.fret
+      return correct === undefined || m.fret !== correct
+    })
+    .map((m) => ({
+      order: m.order,
+      x: markerX(m.fret),
+      y: stringY(props.selectedString),
+    }))
+})
+
+/** 点击品位时触发 select 事件 */
+function handleClick(fret) {
+  emit('select', fret)
+}
 </script>
 
 <style scoped>
@@ -300,7 +414,21 @@ const markers = computed(() => {
 .fb-answer-order {
   font-size: 9px;
   font-weight: 800;
-  fill: var(--primary-color, #4f7cff);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.fb-user-order {
+  font-size: 11px;
+  font-weight: 800;
+  fill: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.fb-click-target {
+  cursor: pointer;
+}
+
+.fb-click-target:active {
+  fill: rgba(255, 255, 255, 0.08);
 }
 </style>

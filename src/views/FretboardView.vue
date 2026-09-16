@@ -56,7 +56,7 @@
       <!-- 节奏说明 -->
       <section class="rhythm-hint">
         <span class="hint-dot" />
-        固定节奏 ♩=60：4 拍听题 → 4 拍思考 → 自动揭示答案，每组 4 个音，可随时暂停
+        固定节奏 ♩=60：4 拍听题 → 4 拍思考 → 自动揭示答案，每组 4 个音。可在指板上点击作答，也可仅听音在脑中回忆，可随时暂停
       </section>
 
       <button type="button" class="start-btn" @click="startDrill">
@@ -116,21 +116,28 @@
         </div>
       </div>
 
-      <!-- 指板 / 等待区 -->
+      <!-- 指板（所有阶段均展示；念题/思考可点击作答，答案阶段展示反馈） -->
       <div class="board-area">
         <FretboardDiagram
-          v-if="phase === 'reveal' && group.length === 4"
           :selected-string="drill.selectedString.value"
           :answers="group"
-          :reveal="true"
+          :reveal="phase === 'reveal'"
+          :interactive="phase === 'recite' || phase === 'think'"
+          :user-answers="userAnswers"
+          @select="answerFret"
         />
-        <div v-else class="board-waiting">
-          <p class="waiting-main">
-            {{ phase === 'recite' ? '听清每个音名…' : '在脑中找到指板位置' }}
-          </p>
-          <p class="waiting-sub">答案将在思考结束后自动显示</p>
-        </div>
       </div>
+
+      <!-- 阶段提示语（指板下方的轻量提示） -->
+      <p class="board-hint">
+        <template v-if="phase === 'recite'">听清每个音名，可边听边在指板上点出位置</template>
+        <template v-else-if="phase === 'think'">在脑中找到指板位置，或直接点击作答</template>
+        <template v-else-if="phase === 'reveal' && userAnswers.length === 0">本组答案</template>
+        <template v-else-if="phase === 'reveal'">
+          <template v-if="correctCount === 4">全部正确！</template>
+          <template v-else>答对 {{ correctCount }} / 4</template>
+        </template>
+      </p>
 
       <!-- 暂停/继续按钮（抱琴盲操作：全宽大按钮） -->
       <button
@@ -163,10 +170,12 @@ const {
   beatInGroup,
   groupIndex,
   flashTick,
+  userAnswers,
   start,
   pause,
   resume,
   stop,
+  answerFret,
 } = drill
 
 /** 配置态选择（初始取持久化偏好） */
@@ -183,6 +192,15 @@ const currentStringName = computed(() => {
 const thinkRemaining = computed(() => 8 - beatInGroup.value)
 /** 答案阶段剩余拍数（beat 8-11 → 4-1） */
 const revealRemaining = computed(() => 12 - beatInGroup.value)
+
+/** 用户答对的个数（仅统计已作答的位置） */
+const correctCount = computed(() => {
+  let count = 0
+  for (let i = 0; i < userAnswers.value.length && i < group.value.length; i += 1) {
+    if (userAnswers.value[i] === group.value[i].fret) count += 1
+  }
+  return count
+})
 
 /** 开始：持久化选择并启动自动循环（用户手势内解锁音频/TTS） */
 function startDrill() {
@@ -557,25 +575,15 @@ function exitDrill() {
   box-shadow: var(--shadow-sm);
   padding: 10px 8px;
   min-height: 190px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
-.board-waiting {
+.board-hint {
   text-align: center;
-  color: var(--text-secondary);
-  padding: 20px;
-}
-
-.waiting-main {
-  font-size: var(--font-size-md);
-  font-weight: 700;
-  color: var(--text-color);
-  margin-bottom: 6px;
-}
-
-.waiting-sub {
   font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+  min-height: 18px;
 }
 
 /* 暂停 */
