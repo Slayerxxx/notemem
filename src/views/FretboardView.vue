@@ -132,29 +132,15 @@
         </div>
       </div>
 
-      <!-- 暂停按钮（抱琴盲操作：全宽大按钮） -->
+      <!-- 暂停/继续按钮（抱琴盲操作：全宽大按钮） -->
       <button
-        v-if="!paused"
         type="button"
         class="pause-btn"
-        @click="pauseDrill"
+        :class="{ 'is-paused': paused }"
+        @click="paused ? resumeDrill() : pauseDrill()"
       >
-        ⏸ 暂停
+        {{ paused ? '▶ 继续' : '⏸ 暂停' }}
       </button>
-
-      <!-- 暂停遮罩 -->
-      <div v-if="paused" class="pause-overlay">
-        <div class="pause-card">
-          <p class="pause-title">已暂停</p>
-          <p class="pause-sub">检查好位置后继续节奏</p>
-          <button type="button" class="resume-btn" @click="resumeDrill">
-            ▶ 继续
-          </button>
-          <button type="button" class="quit-btn" @click="exitDrill">
-            退出练习
-          </button>
-        </div>
-      </div>
     </div>
   </div>
 </template>
@@ -603,65 +589,26 @@ function exitDrill() {
   font-weight: 800;
   letter-spacing: 4px;
   box-shadow: 0 6px 16px rgba(79, 124, 255, 0.32);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 
 .pause-btn:active {
   background: var(--primary-dark);
 }
 
-.pause-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: rgba(20, 24, 33, 0.55);
-  backdrop-filter: blur(3px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+/* 暂停态：按钮变红，提示当前已暂停、点击可继续 */
+.pause-btn.is-paused {
+  background: var(--danger-color);
+  box-shadow: 0 6px 16px rgba(255, 77, 79, 0.32);
+  animation: paused-pulse 1.6s ease-in-out infinite;
 }
 
-.pause-card {
-  width: 100%;
-  max-width: 320px;
-  background: var(--card-bg);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  padding: 24px 20px 20px;
-  text-align: center;
+.pause-btn.is-paused:active {
+  filter: brightness(0.92);
 }
 
-.pause-title {
-  font-size: var(--font-size-xl);
-  font-weight: 800;
-  color: var(--text-color);
-}
-
-.pause-sub {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  margin: 6px 0 18px;
-}
-
-.resume-btn {
-  width: 100%;
-  min-height: 52px;
-  border-radius: var(--radius-md);
-  background: var(--primary-color);
-  color: #fff;
-  font-size: var(--font-size-lg);
-  font-weight: 700;
-  margin-bottom: 10px;
-}
-
-.quit-btn {
-  width: 100%;
-  min-height: 44px;
-  border-radius: var(--radius-md);
-  border: 1.5px solid var(--border-color);
-  background: var(--card-bg);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
+@keyframes paused-pulse {
+  0%, 100% { box-shadow: 0 6px 16px rgba(255, 77, 79, 0.32); }
+  50% { box-shadow: 0 6px 22px rgba(255, 77, 79, 0.5); }
 }
 </style>
