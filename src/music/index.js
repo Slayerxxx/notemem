@@ -10,6 +10,9 @@ export {
   getDegreeOfNote,
   normalizeNoteName,
   NOTE_TO_POSITION,
+  PENTATONIC_MODES,
+  getPentatonicScale,
+  findPentatonicNote,
 } from './scales.js'
 
 export {

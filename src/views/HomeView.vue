@@ -126,6 +126,14 @@
         </div>
         <span class="tool-arrow">›</span>
       </div>
+      <div class="tool-card" @click="openPentatonicTool">
+        <span class="tool-icon">🎵</span>
+        <div class="tool-info">
+          <h3 class="tool-name">五声音阶指板速查</h3>
+          <p class="tool-desc">查看任意调五声音阶在全指板的位置</p>
+        </div>
+        <span class="tool-arrow">›</span>
+      </div>
     </section>
 
     <!-- 底部功能入口 -->
@@ -305,6 +313,11 @@ function startTraining(card) {
 /** 进入吉他指板记忆工具 */
 function openFretboardTool() {
   router.push('/tools/fretboard')
+}
+
+/** 进入五声音阶指板速查工具 */
+function openPentatonicTool() {
+  router.push('/tools/pentatonic')
 }
 </script>
 
@@ -608,6 +621,11 @@ function openFretboardTool() {
   box-shadow: var(--shadow-sm);
   padding: 16px;
   cursor: pointer;
+  margin-bottom: 12px;
+}
+
+.tool-card:last-child {
+  margin-bottom: 0;
 }
 
 .tool-card:active {
