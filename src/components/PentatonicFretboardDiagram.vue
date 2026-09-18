@@ -3,6 +3,7 @@
     <div ref="scrollEl" class="penta-scroll" @scroll="onScroll">
       <svg
         class="penta-svg"
+        :class="{ 'is-fullscreen': fullscreen }"
         :viewBox="`0 0 ${SVG_W} ${SVG_H}`"
         role="img"
         aria-label="五声音阶指板图"
@@ -162,16 +163,33 @@
           </template>
         </g>
 
-        <!-- 品位数字 -->
+        <!-- 品位标记：空弦区显示 0；有品记的品位画小点（12 品竖排双点），
+             不再展示品号数字，避免与指板上的珍珠贝品记混淆；
+             无品记的品位仍展示品号数字，便于定位。 -->
         <text x="14" y="180" text-anchor="middle" class="penta-fret-num">0</text>
-        <text
-          v-for="f in MAX_FRET"
-          :key="'fret-num-' + f"
-          :x="fretCenterX(f)"
-          y="180"
-          text-anchor="middle"
-          class="penta-fret-num"
-        >{{ f }}</text>
+        <template v-for="f in MAX_FRET" :key="'fret-mark-' + f">
+          <!-- 单点品记（3/5/7/9/15/17/19/21）-->
+          <circle
+            v-if="hasMarker(f) && !isDoubleDot(f)"
+            :cx="fretCenterX(f)"
+            cy="180"
+            r="3.2"
+            fill="url(#penta-marker)"
+          />
+          <!-- 双点品记（12 品）-->
+          <g v-else-if="isDoubleDot(f)">
+            <circle :cx="fretCenterX(f)" cy="175" r="2.7" fill="url(#penta-marker)" />
+            <circle :cx="fretCenterX(f)" cy="185" r="2.7" fill="url(#penta-marker)" />
+          </g>
+          <!-- 无品记：展示品号数字 -->
+          <text
+            v-else
+            :x="fretCenterX(f)"
+            y="180"
+            text-anchor="middle"
+            class="penta-fret-num"
+          >{{ f }}</text>
+        </template>
       </svg>
     </div>
 
@@ -202,6 +220,11 @@ const props = defineProps({
     type: String,
     default: 'degree',
     validator: (v) => ['note', 'degree'].includes(v),
+  },
+  /** 全屏模式：放大指板以充分利用横屏空间 */
+  fullscreen: {
+    type: Boolean,
+    default: false,
   },
 })
 
@@ -242,6 +265,27 @@ function fretCenterX(f) {
 /** 弦索引 → 纵向坐标（⑥弦在底部，①弦在顶部） */
 function stringY(i) {
   return STRING_FIRST_Y + (5 - i) * STRING_SPACING
+}
+
+// ============== 品记位置 ==============
+/**
+ * 真实吉他指板上设有珍珠贝品记的品位，遵循行业惯例：
+ * 单点品记：3 / 5 / 7 / 9 / 15 / 17 / 19 / 21
+ * 双点品记：12
+ * 这些位置在指板下方品号区以小点形式复刻，
+ * 让用户即便音点挡住了指板上的珍珠贝品记，也能凭小点判断当前品位。
+ */
+const MARKER_FRETS = new Set([3, 5, 7, 9, 12, 15, 17, 19, 21])
+const DOUBLE_DOT_FRETS = new Set([12])
+
+/** 该品位是否有珍珠贝品记 */
+function hasMarker(fret) {
+  return MARKER_FRETS.has(fret)
+}
+
+/** 该品位是否为双点品记（仅 12 品）*/
+function isDoubleDot(fret) {
+  return DOUBLE_DOT_FRETS.has(fret)
 }
 
 /** 琴弦粗细：⑥ 最粗 → ① 最细 */
@@ -336,6 +380,17 @@ onBeforeUnmount(() => {
   height: auto;
   min-width: 520px;
   filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.18));
+}
+
+/* 全屏模式：以横屏视口高度为基准等比放大指板，
+   宽度自动延伸（仍可横向滑动查看高把位），让指板与音点都明显变大。 */
+.penta-svg.is-fullscreen {
+  width: auto;
+  height: 74vh;
+  min-width: 0;
+  max-width: none;
+  margin: 0 auto;
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.45));
 }
 
 .penta-string-name {
