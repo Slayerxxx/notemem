@@ -172,3 +172,86 @@ export function getDegreeOfNote(keyName, noteName) {
   const item = scale.find((n) => n.name === target)
   return item ? item.degree : null
 }
+
+// ============== 五声音阶 ==============
+
+/** 五声音阶支持的模式 */
+export const PENTATONIC_MODES = ['major', 'minor']
+
+/** 大调五声：取大调音阶 1,2,3,5,6 级 → 半音距离 [0,2,4,7,9] */
+const MAJOR_PENTATONIC_INTERVALS = [0, 2, 4, 7, 9]
+/** 小调五声：取自然小调 1,3,4,5,7 级 → 半音距离 [0,3,5,7,10] */
+const MINOR_PENTATONIC_INTERVALS = [0, 3, 5, 7, 10]
+
+/** 五声音阶音级标签（与音程序列一一对应） */
+const MAJOR_PENTATONIC_DEGREES = ['1', '2', '3', '5', '6']
+const MINOR_PENTATONIC_DEGREES = ['1', '♭3', '4', '5', '♭7']
+
+/**
+ * 半音位置 → 大调主音名（用于查找小调的关系大调，决定拼写体系）。
+ * 与 MAJOR_KEYS 中出现的拼写保持一致（如位置 1 取 D♭ 而非 C♯）。
+ */
+const PITCH_TO_MAJOR_KEY_SPELL = {
+  0: 'C', 1: 'D♭', 2: 'D', 3: 'E♭', 4: 'E', 5: 'F',
+  6: 'F♯', 7: 'G', 8: 'A♭', 9: 'A', 10: 'B♭', 11: 'B',
+}
+
+/**
+ * 获取五声音阶的 5 个音。
+ *
+ * 拼写规则（降号自然显示）：
+ * - 大调五声：直接使用该大调的调号体系拼写；
+ * - 小调五声：使用其关系大调的调号体系拼写，使升降号自然出现。
+ *   例：A 小调五声 → 关系大调 C 大调 → A C D E G（无升降）
+ *       C 小调五声 → 关系大调 E♭ 大调 → C E♭ F G B♭（自然出现降号）
+ *       F♯ 小调五声 → 关系大调 A 大调 → F♯ A B C♯ E（自然出现升号）
+ *
+ * 音级标签：大调 1,2,3,5,6；小调 1,♭3,4,5,♭7（固定，与调无关）。
+ *
+ * @param {string} keyName 调名（如 'A'、'C'、'B♭'、'F♯'）
+ * @param {'major'|'minor'} mode 大调或小调五声音阶
+ * @returns {Array<{name: string, degree: string, pitch: number}>}
+ *   name: 调式拼写音名；degree: 音级标签；pitch: 0-11 半音位置
+ */
+export function getPentatonicScale(keyName, mode) {
+  const key = normalizeNoteName(keyName)
+  if (!MAJOR_KEYS.includes(key)) {
+    throw new Error(`Unsupported key: ${keyName}`)
+  }
+  if (!PENTATONIC_MODES.includes(mode)) {
+    throw new Error(`Unsupported pentatonic mode: ${mode}`)
+  }
+
+  const rootPitch = NOTE_TO_POSITION[key]
+  const isMinor = mode === 'minor'
+  const intervals = isMinor ? MINOR_PENTATONIC_INTERVALS : MAJOR_PENTATONIC_INTERVALS
+  const degrees = isMinor ? MINOR_PENTATONIC_DEGREES : MAJOR_PENTATONIC_DEGREES
+
+  // 决定拼写体系：小调用关系大调（根音 + 3 半音）的调号
+  let spellKey = key
+  if (isMinor) {
+    const relMajorPitch = (rootPitch + 3) % 12
+    spellKey = PITCH_TO_MAJOR_KEY_SPELL[relMajorPitch]
+  }
+  const system = keyAccidentalSystem(spellKey)
+
+  return intervals.map((interval, i) => {
+    const pitch = (rootPitch + interval) % 12
+    const name = noteNameByPosition(pitch, system)
+    return { name, degree: degrees[i], pitch }
+  })
+}
+
+/**
+ * 判断某半音位置是否为指定调的五声音阶音，并返回其音级信息。
+ * 用于指板遍历时快速命中。
+ * @param {string} keyName
+ * @param {'major'|'minor'} mode
+ * @param {number} pitch 0-11
+ * @returns {{name: string, degree: string, pitch: number}|null}
+ */
+export function findPentatonicNote(keyName, mode, pitch) {
+  const scale = getPentatonicScale(keyName, mode)
+  const pos = ((Number(pitch) % 12) + 12) % 12
+  return scale.find((n) => n.pitch === pos) ?? null
+}

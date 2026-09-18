@@ -17,6 +17,11 @@ const routes = [
     component: () => import('../views/FretboardView.vue')
   },
   {
+    path: '/tools/pentatonic',
+    name: 'PentatonicTool',
+    component: () => import('../views/PentatonicFretboardView.vue')
+  },
+  {
     path: '/result',
     name: 'Result',
     component: () => import('../views/ResultView.vue')

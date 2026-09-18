@@ -34,6 +34,12 @@ const DEFAULT_SETTINGS = {
   fretboardString: 0,
   /** 吉他指板工具：上次选择的调性（null=不限调） */
   fretboardKey: null,
+  /** 五声音阶指板速查：上次选择的调（如 'A'） */
+  pentatonicKey: 'A',
+  /** 五声音阶指板速查：大调或小调（'major' | 'minor'） */
+  pentatonicMode: 'minor',
+  /** 五声音阶指板速查：标注模式（'degree' 数字 | 'note' 音名） */
+  pentatonicLabelMode: 'degree',
   /** 音效开关 */
   soundEnabled: true,
   /** 自定义模式预设（用户保存的配置数组） */
